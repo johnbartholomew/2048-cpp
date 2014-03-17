@@ -36,7 +36,6 @@ struct RNG {
 	RNG(const RNG &from): x(from.x), y(from.y), z(from.z), w(from.w) {}
 	
 	void reset(uint32_t seed = 0u) {
-		uint32_t x, y, z, w;
 		x = seed ? seed : 123456789u;
 		y = x^(x<<13); y ^= (y >> 17); y ^= (y << 5);
 		z = y^(y<<13); z ^= (z >> 17); z ^= (z << 5);
