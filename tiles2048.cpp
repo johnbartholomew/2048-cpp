@@ -239,9 +239,6 @@ int main(int argc, char **argv) {
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
-	float inv_tex_w = 1.0f / tiles_tex_w;
-	float inv_tex_h = 1.0f / tiles_tex_h;
-
 	while (!glfwWindowShouldClose(wnd)) {
 		glfwWaitEvents();
 		glClear(GL_COLOR_BUFFER_BIT);
