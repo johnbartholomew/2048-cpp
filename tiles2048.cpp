@@ -62,23 +62,25 @@ struct RNG {
 	}
 };
 
+typedef uint8_t BoardState[NUM_TILES];
+
 struct Board {
 	RNG rng;
-	uint8_t board[NUM_TILES];
+	BoardState state;
 
 	void reset(uint32_t seed = 0u) {
 		rng.reset(seed);
-		memset(board, 0, sizeof(board));
+		memset(&state, 0, sizeof(state));
 	}
 
 	void place() {
 		uint8_t free[NUM_TILES];
 		int nfree = 0;
-		for (int i = 0; i < NUM_TILES; ++i) { if (board[i] == 0) { free[nfree++] = i; } }
+		for (int i = 0; i < NUM_TILES; ++i) { if (state[i] == 0) { free[nfree++] = i; } }
 		assert(nfree > 0);
 		int value = (rng.next_n(10) < 9 ? 1 : 2);
 		int which = rng.next_n(nfree);
-		board[free[which]] = value;
+		state[free[which]] = value;
 	}
 
 	void tilt(int dx, int dy) {
@@ -98,32 +100,32 @@ struct Board {
 			while (from != stop) {
 #if 0
 				printf("%d : [%d,%d] %d -> [%d,%d] %d\n",
-						last_value, from % TILES_X,from / TILES_X, board[from],
-						to % TILES_X, to / TILES_X, board[to]);
+						last_value, from % TILES_X,from / TILES_X, state[from],
+						to % TILES_X, to / TILES_X, state[to]);
 #endif
-				if (board[from]) {
+				if (state[from]) {
 					if (last_value) {
-						if (last_value == board[from]) {
-							board[to] = last_value + 1;
+						if (last_value == state[from]) {
+							state[to] = last_value + 1;
 							last_value = 0;
 						} else {
-							int tmp = board[from];
-							board[to] = last_value;
+							int tmp = state[from];
+							state[to] = last_value;
 							last_value = tmp;
 						}
 						to += step_minor;
 					} else {
-						last_value = board[from];
+						last_value = state[from];
 					}
 				}
 				from += step_minor;
 			}
 			if (last_value) {
-				board[to] = last_value;
+				state[to] = last_value;
 				to += step_minor;
 			}
 			while (to != stop) {
-				board[to] = 0;
+				state[to] = 0;
 				to += step_minor;
 			}
 
@@ -258,7 +260,7 @@ int main(int /*argc*/, char** /*argv*/) {
 			for (int j = 0; j < 4; ++j) {
 				float y = (3 - i) * 128.0f;
 				float x = j * 128.0f;
-				int value = s_history.get().board[i*4+j];
+				int value = s_history.get().state[i*4+j];
 				float u = (value % 4) * 0.25f;
 				float v = (value / 4) * 0.25f;
 				glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x, y);
