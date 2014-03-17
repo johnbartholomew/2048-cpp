@@ -64,6 +64,65 @@ struct RNG {
 
 typedef uint8_t BoardState[NUM_TILES];
 
+struct Slide {
+	uint16_t from;
+	uint16_t to;
+};
+
+struct AnimState {
+	Slide merges[NUM_TILES];
+	Slide slides[NUM_TILES];
+	int new_tiles[NUM_TILES];
+	int num_merges;
+	int num_slides;
+	int num_new_tiles;
+
+	void reset() {
+		num_merges = 0;
+		num_slides = 0;
+		num_new_tiles = 0;
+	}
+
+	void merge(int from, int to) {
+		assert(num_merges < NUM_TILES);
+		assert(to >= 0 && to < NUM_TILES);
+		assert(from >= 0 && from < NUM_TILES);
+		merges[num_merges].from = from;
+		merges[num_merges].to = to;
+#if 0
+		printf("merge %d,%d -> %d,%d\n",
+				from % TILES_X, from / TILES_X,
+				to % TILES_X, to / TILES_X);
+#endif
+		++num_merges;
+	}
+
+	void slide(int from, int to) {
+		assert(num_slides < NUM_TILES);
+		assert(to >= 0 && to < NUM_TILES);
+		assert(from >= 0 && from < NUM_TILES);
+		if (from == to) { return; }
+		slides[num_slides].from = from;
+		slides[num_slides].to = to;
+#if 0
+		printf("slide %d,%d -> %d,%d\n",
+				from % TILES_X, from / TILES_X,
+				to % TILES_X, to / TILES_X);
+#endif
+		++num_slides;
+	}
+
+	void new_tile(int where) {
+		assert(num_new_tiles < NUM_TILES);
+		assert(where >= 0 && where < NUM_TILES);
+		new_tiles[num_new_tiles] = where;
+#if 0
+		printf("new tile @ %d,%d\n", where % TILES_X, where / TILES_X);
+#endif
+		++num_new_tiles;
+	}
+};
+
 struct Board {
 	RNG rng;
 	BoardState state;
@@ -73,7 +132,7 @@ struct Board {
 		memset(&state, 0, sizeof(state));
 	}
 
-	void place() {
+	void place(AnimState &anim) {
 		uint8_t free[NUM_TILES];
 		int nfree = 0;
 		for (int i = 0; i < NUM_TILES; ++i) { if (state[i] == 0) { free[nfree++] = i; } }
@@ -81,9 +140,10 @@ struct Board {
 		int value = (rng.next_n(10) < 9 ? 1 : 2);
 		int which = rng.next_n(nfree);
 		state[free[which]] = value;
+		anim.new_tile(free[which]);
 	}
 
-	void tilt(int dx, int dy) {
+	void tilt(int dx, int dy, AnimState &anim) {
 		assert((dx && !dy) || (dy && !dx));
 
 		int begin = ((dx | dy) > 0 ? NUM_TILES - 1 : 0);
@@ -97,6 +157,7 @@ struct Board {
 			int from = begin, to = begin;
 
 			int last_value = 0;
+			int last_from = from;
 			while (from != stop) {
 #if 0
 				printf("%d : [%d,%d] %d -> [%d,%d] %d\n",
@@ -106,22 +167,28 @@ struct Board {
 				if (state[from]) {
 					if (last_value) {
 						if (last_value == state[from]) {
+							anim.merge(last_from, to);
+							anim.merge(from, to);
 							state[to] = last_value + 1;
 							last_value = 0;
 						} else {
+							anim.slide(last_from, to);
 							int tmp = state[from];
 							state[to] = last_value;
 							last_value = tmp;
+							last_from = from;
 						}
 						to += step_minor;
 					} else {
 						last_value = state[from];
+						last_from = from;
 					}
 				}
 				from += step_minor;
 			}
 			if (last_value) {
 				state[to] = last_value;
+				if (last_from != to) { anim.slide(last_from, to); }
 				to += step_minor;
 			}
 			while (to != stop) {
@@ -133,9 +200,10 @@ struct Board {
 		}
 	}
 
-	void move(int dir) {
+	void move(int dir, AnimState &anim) {
 		assert(dir >= 0 && dir < 4);
-		tilt(DIR_DX[dir], DIR_DY[dir]);
+		anim.reset();
+		tilt(DIR_DX[dir], DIR_DY[dir], anim);
 	}
 };
 
@@ -183,32 +251,33 @@ struct BoardHistory {
 		return boards[current];
 	}
 
-	void place() {
-		push().place();
+	void place(AnimState &anim) {
+		push().place(anim);
 	}
 
-	void tilt(int dx, int dy) {
-		push().tilt(dx, dy);
+	void tilt(int dx, int dy, AnimState &anim) {
+		push().tilt(dx, dy, anim);
 	}
 
-	void move(int dir) {
-		push().move(dir);
+	void move(int dir, AnimState &anim) {
+		push().move(dir, anim);
 	}
 };
 
 static BoardHistory s_history;
+static AnimState s_anim;
 
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
 		switch (key) {
 			case GLFW_KEY_ESCAPE: { exit(0); } break;
-			case GLFW_KEY_SPACE: { s_history.place(); } break;
-			case GLFW_KEY_RIGHT: { s_history.move(MOVE_RIGHT); } break;
-			case GLFW_KEY_LEFT:  { s_history.move(MOVE_LEFT); } break;
-			case GLFW_KEY_DOWN:  { s_history.move(MOVE_DOWN); } break;
-			case GLFW_KEY_UP:    { s_history.move(MOVE_UP); } break;
-			case GLFW_KEY_Z:     { s_history.undo(); } break;
-			case GLFW_KEY_X:     { s_history.redo(); } break;
+			case GLFW_KEY_SPACE:  { s_anim.reset(); s_history.place(s_anim); } break;
+			case GLFW_KEY_RIGHT:  { s_anim.reset(); s_history.move(MOVE_RIGHT, s_anim); } break;
+			case GLFW_KEY_LEFT:   { s_anim.reset(); s_history.move(MOVE_LEFT, s_anim); } break;
+			case GLFW_KEY_DOWN:   { s_anim.reset(); s_history.move(MOVE_DOWN, s_anim); } break;
+			case GLFW_KEY_UP:     { s_anim.reset(); s_history.move(MOVE_UP, s_anim); } break;
+			case GLFW_KEY_Z:      { s_anim.reset(); s_history.undo(); } break;
+			case GLFW_KEY_X:      { s_anim.reset(); s_history.redo(); } break;
 		}
 	}
 }
@@ -218,6 +287,7 @@ int main(int /*argc*/, char** /*argv*/) {
 	GLFWwindow *wnd = glfwCreateWindow(600, 768, "2048", NULL, NULL);
 
 	s_history.reset();
+	s_anim.reset();
 
 	glfwSetKeyCallback(wnd, &handle_key);
 
