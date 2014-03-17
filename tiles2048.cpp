@@ -54,11 +54,11 @@ struct RNG {
 		// see: http://www.azillionmonkeys.com/qed/random.html
 		assert(n > 0);
 		const uint32_t range = UINT32_MAX - (UINT32_MAX % n);
-		uint32_t x;
-		do { x = next32(); } while (x >= range);
-		x = (x / ((range - 1) / (uint32_t)n + 1));
-		assert(x < (uint32_t)n);
-		return x;
+		uint32_t value;
+		do { value = next32(); } while (value >= range);
+		value = (value / ((range - 1) / (uint32_t)n + 1));
+		assert(value < (uint32_t)n);
+		return value;
 	}
 };
 
