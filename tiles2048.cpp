@@ -31,10 +31,6 @@ static const int DIR_DY[4] = { 0, 0, -1, 1 };
 struct RNG {
 	uint32_t x, y, z, w;
 
-	RNG() { reset(); }
-	explicit RNG(uint32_t seed) { reset(seed); }
-	RNG(const RNG &from): x(from.x), y(from.y), z(from.z), w(from.w) {}
-	
 	void reset(uint32_t seed = 0u) {
 		x = seed ? seed : 123456789u;
 		y = x^(x<<13); y ^= (y >> 17); y ^= (y << 5);
