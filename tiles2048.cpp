@@ -196,7 +196,7 @@ struct BoardHistory {
 
 static BoardHistory s_history;
 
-static void handle_key(GLFWwindow *wnd, int key, int scancode, int action, int mods) {
+static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
 		switch (key) {
 			case GLFW_KEY_ESCAPE: { exit(0); } break;
@@ -211,7 +211,7 @@ static void handle_key(GLFWwindow *wnd, int key, int scancode, int action, int m
 	}
 }
 
-int main(int argc, char **argv) {
+int main(int /*argc*/, char** /*argv*/) {
 	glfwInit();
 	GLFWwindow *wnd = glfwCreateWindow(600, 768, "2048", NULL, NULL);
 
