@@ -1,5 +1,5 @@
 
-CODEGEN_FLAGS := -O0 -g
+CODEGEN_FLAGS := -O0 -g -Wall -Wextra -Wshadow
 CFLAGS :=  $(CODEGEN_FLAGS)
 CXXFLAGS := -std=c++03 $(CODEGEN_FLAGS)
 CPPFLAGS :=
@@ -14,7 +14,7 @@ gl_core21.o: gl_core21.c
 	gcc $(CFLAGS) $(CPPFLAGS) -o $@ -c $<
 
 stb_image.o: stb_image.c
-	gcc $(CFLAGS) $(CPPFLAGS) -o $@ -c $<
+	gcc $(CFLAGS) $(CPPFLAGS) -w -o $@ -c $<
 
 tiles2048.o: tiles2048.cpp
 	g++ $(CXXFLAGS) $(CPPFLAGS) -o $@ -c $<
