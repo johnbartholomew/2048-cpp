@@ -20,6 +20,8 @@ tiles.png: tiles.svg
 	inkscape --export-png=$@ --export-area-page $<
 	optipng -clobber -strip all -i 0 $@
 
-.PHONY: clean
+.PHONY: clean fullclean
 clean:
-	rm -f tiles2048.o stb_image.o tiles2048 tiles.png
+	rm -f tiles2048.o stb_image.o tiles2048
+fullclean: clean
+	rm -f tiles.png
