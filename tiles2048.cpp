@@ -395,15 +395,6 @@ struct BoardHistory {
 	const Board &get() const { return boards[current]; }
 	const RNG &get_rng() const { return rngs[current]; }
 
-	void push() {
-		if (undo_avail < MAX_UNDO) { ++undo_avail; }
-		redo_avail = 0;
-		int from = current;
-		current = (current + 1) % MAX_UNDO;
-		boards[current] = boards[from];
-		rngs[current] = rngs[from];
-	}
-
 	Board &undo() {
 		if (undo_avail) {
 			--undo_avail;
@@ -423,7 +414,12 @@ struct BoardHistory {
 	}
 
 	void move(int dir, AnimState &anim) {
-		push();
+		if (undo_avail < MAX_UNDO) { ++undo_avail; }
+		redo_avail = 0;
+		int from = current;
+		current = (current + 1) % MAX_UNDO;
+		boards[current] = boards[from];
+		rngs[current] = rngs[from];
 		boards[current].move(dir, &anim, rngs[current]);
 	}
 };
