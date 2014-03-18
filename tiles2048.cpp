@@ -348,7 +348,7 @@ struct Board {
 };
 
 struct BoardHistory {
-	enum { MAX_UNDO = 2048 };
+	enum { MAX_UNDO = 4096 };
 	Board boards[MAX_UNDO];
 	RNG rngs[MAX_UNDO];
 	int current;
