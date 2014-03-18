@@ -414,13 +414,17 @@ struct BoardHistory {
 	}
 
 	void move(int dir, AnimState &anim) {
-		if (undo_avail < MAX_UNDO) { ++undo_avail; }
-		redo_avail = 0;
-		int from = current;
-		current = (current + 1) % MAX_UNDO;
-		boards[current] = boards[from];
-		rngs[current] = rngs[from];
-		boards[current].move(dir, &anim, rngs[current]);
+		Board next_state = boards[current];
+		RNG next_rng = rngs[current];
+		bool moved = next_state.move(dir, &anim, next_rng);
+
+		if (moved) {
+			current = (current + 1) % MAX_UNDO;
+			boards[current] = next_state;
+			rngs[current] = next_rng;
+			if (undo_avail < MAX_UNDO) { ++undo_avail; }
+			redo_avail = 0;
+		}
 	}
 };
 
