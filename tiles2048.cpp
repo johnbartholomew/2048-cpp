@@ -120,6 +120,7 @@ struct AnimState {
 
 	void merge(int from, int to) {
 		if (from != to) { add_slide(from, to); }
+		if (!status[to]) { add_new_tile(to); }
 		status[from] |= TILE_SLIDE_SRC;
 		status[to] |= TILE_SLIDE_DST;
 		status[to] |= TILE_MERGE;
