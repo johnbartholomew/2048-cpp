@@ -459,6 +459,22 @@ static void render_anim(float alpha, const Board &board, const AnimState &anim) 
 	}
 }
 
+static void render_static(const Board &board) {
+	printf("render static\n");
+	for (int i = 0; i < NUM_TILES; ++i) {
+		const int value = board.state[i];
+		if (value == 0) { continue; }
+		const float x = 128.0f * (i % TILES_X);
+		const float y = 128.0f * (i / TILES_X);
+		const float u = (value % 4) * 0.25f;
+		const float v = (value / 4) * 0.25f;
+		glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x, y);
+		glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x + 128.0f, y);
+		glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x + 128.0f, y + 128.0f);
+		glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x, y + 128.0f);
+	}
+}
+
 int main(int /*argc*/, char** /*argv*/) {
 	glfwInit();
 	GLFWwindow *wnd = glfwCreateWindow(600, 768, "2048", NULL, NULL);
@@ -523,7 +539,11 @@ int main(int /*argc*/, char** /*argv*/) {
 		glEnable(GL_TEXTURE_2D);
 		glColor4ub(255, 255, 255, 255);
 		glBegin(GL_QUADS);
-		render_anim(alpha, s_history.get(), s_anim);
+		if (alpha < 1.0) {
+			render_anim(alpha, s_history.get(), s_anim);
+		} else {
+			render_static(s_history.get());
+		}
 		glEnd();
 
 		glfwSwapBuffers(wnd);
