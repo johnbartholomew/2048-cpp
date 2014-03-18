@@ -267,7 +267,7 @@ struct Board {
 		return (count_free() == 0 && !has_direct_matches());
 	}
 
-	void place(int count, AnimState &anim, RNG &rng) {
+	void place(int count, AnimState *anim, RNG &rng) {
 		assert(count > 0);
 		uint8_t free[NUM_TILES];
 		int nfree = count_free(free);
@@ -276,7 +276,7 @@ struct Board {
 			int which = rng.next_n(nfree);
 
 			state[free[which]] = value;
-			anim.new_tile(free[which], value);
+			if (anim) { anim->new_tile(free[which], value); }
 
 			// could do this by swapping the last value into free[which],
 			// but that changes the order of slots which means that
@@ -287,7 +287,7 @@ struct Board {
 		}
 	}
 
-	void tilt(int dx, int dy, AnimState &anim) {
+	bool tilt(int dx, int dy, AnimState *anim) {
 		assert((dx && !dy) || (dy && !dx));
 
 		int begin = ((dx | dy) > 0 ? NUM_TILES - 1 : 0);
@@ -295,6 +295,8 @@ struct Board {
 		int step_minor = -(dy*TILES_X + dx);
 		int n = (dx ? TILES_Y : TILES_X);
 		int m = (dx ? TILES_X : TILES_Y);
+
+		bool moved = false;
 
 		for (int i = 0; i < n; ++i) {
 			int stop = begin + m*step_minor;
@@ -306,11 +308,13 @@ struct Board {
 				if (state[from]) {
 					if (last_value) {
 						if (last_value == state[from]) {
-							anim.merge(last_from, from, to, last_value);
+							if (anim) { anim->merge(last_from, from, to, last_value); }
+							moved = true;
 							state[to] = last_value + 1;
 							last_value = 0;
 						} else {
-							anim.slide(last_from, to, last_value);
+							if (anim) { anim->slide(last_from, to, last_value); }
+							if (last_from != to) { moved = true; }
 							int tmp = state[from];
 							state[to] = last_value;
 							last_value = tmp;
@@ -325,25 +329,29 @@ struct Board {
 				from += step_minor;
 			}
 			if (last_value) {
-				anim.slide(last_from, to, last_value);
+				if (anim) { anim->slide(last_from, to, last_value); }
+				if (last_from != to) { moved = true; }
 				state[to] = last_value;
 				to += step_minor;
 			}
 			while (to != stop) {
-				anim.blank(to);
+				if (anim) { anim->blank(to); }
 				state[to] = 0;
 				to += step_minor;
 			}
 
 			begin += step_major;
 		}
+
+		return moved;
 	}
 
-	void move(int dir, AnimState &anim, RNG &rng) {
+	bool move(int dir, AnimState *anim, RNG &rng) {
 		assert(dir >= 0 && dir < 4);
-		anim.reset();
-		tilt(DIR_DX[dir], DIR_DY[dir], anim);
-		if (anim.tiles_changed()) { place(1, anim, rng); }
+		if (anim) { anim->reset(); }
+		bool moved = tilt(DIR_DX[dir], DIR_DY[dir], anim);
+		if (moved) { place(1, anim, rng); }
+		return moved;
 	}
 };
 
@@ -376,7 +384,7 @@ struct BoardHistory {
 
 	void new_game(AnimState &anim) {
 		clear_history();
-		boards[0].place(2, anim, rngs[0]);
+		boards[0].place(2, &anim, rngs[0]);
 	}
 
 	const Board &get() const { return boards[current]; }
@@ -423,7 +431,7 @@ struct BoardHistory {
 
 	void move(int dir, AnimState &anim) {
 		push();
-		boards[current].move(dir, anim, rngs[current]);
+		boards[current].move(dir, &anim, rngs[current]);
 	}
 };
 
