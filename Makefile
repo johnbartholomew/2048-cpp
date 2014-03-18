@@ -1,5 +1,5 @@
 
-CODEGEN_FLAGS := -O0 -g -Wall -Wextra
+CODEGEN_FLAGS := -Os -flto -Wall -Wextra
 CFLAGS :=  $(CODEGEN_FLAGS)
 CXXFLAGS := -std=c++03 $(CODEGEN_FLAGS)
 CPPFLAGS :=
