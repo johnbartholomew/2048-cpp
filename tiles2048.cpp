@@ -417,18 +417,6 @@ struct BoardHistory {
 		return boards[current];
 	}
 
-#if 0
-	void place(int count, AnimState &anim) {
-		push();
-		boards[current].place(count, anim, rngs[current]);
-	}
-
-	void tilt(int dx, int dy, AnimState &anim) {
-		push();
-		boards[current].tilt(dx, dy, anim);
-	}
-#endif
-
 	void move(int dir, AnimState &anim) {
 		push();
 		boards[current].move(dir, &anim, rngs[current]);
