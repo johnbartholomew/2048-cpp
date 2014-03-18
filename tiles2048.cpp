@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <climits>
 #include <cassert>
 #include <stdint.h>
 
@@ -423,30 +424,97 @@ struct BoardHistory {
 	}
 };
 
+static int ai_eval_board(const Board &board) {
+	// try to maximise free space
+	return board.count_free();
+}
+
+typedef int (*Evaluator)(const Board &board);
+typedef int (*Searcher)(Evaluator eval, const Board &board, const RNG &rng, int depth, int *move);
+
+static int ai_search_cheating(Evaluator eval, const Board &board, const RNG &rng, int lookahead, int *move) {
+	assert(lookahead >= 0);
+	if (move) { *move = -1; }
+	if (lookahead == 0) { return eval(board); }
+
+	Board next_state;
+	RNG next_rng;
+	int best_score = INT_MIN;
+	for (int i = 0; i < 4; ++i) {
+		next_state = board;
+		next_rng = rng;
+		if (!next_state.move(i, 0, next_rng)) { continue; } // ignore null moves
+		int score = ai_search_cheating(eval, next_state, next_rng, lookahead - 1, 0);
+		if (score > best_score) {
+			best_score = score;
+			if (move) { *move = i; }
+		}
+	}
+	return best_score;
+}
+
+static int ai_move(Searcher searchfn, Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *score = 0) {
+	int best_move;
+	int best_score = searchfn(evalfn, board, rng, lookahead, &best_move);
+	if (score) { *score = best_score; }
+	return best_move;
+}
+
 static BoardHistory s_history;
 static AnimState s_anim;
 static double s_anim_time0;
 static double s_anim_time1;
-static const double ANIM_TIME = 0.2;
+static bool s_autoplay;
+
+static const double ANIM_TIME_NORMAL = 0.2;
+static const double ANIM_TIME_AUTOPLAY = 0.05;
+
+static void start_anim(const double len) {
+	if (s_anim.tiles_changed()) {
+		s_anim_time0 = glfwGetTime();
+		s_anim_time1 = s_anim_time0 + len;
+	} else {
+		s_anim_time0 = s_anim_time1 = 0.0;
+	}
+}
+
+#if 0
+static void stop_anim() {
+	s_anim_time0 = s_anim_time1 = 0.0;
+}
+#endif
+
+static void automove(BoardHistory &history, AnimState &anim) {
+	int move = ai_move(&ai_search_cheating, &ai_eval_board, history.get(), history.get_rng(), 7);
+	if (move != -1) {
+		history.move(move, anim);
+	} else {
+		s_autoplay = false;
+	}
+}
 
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
-		s_anim.reset();
-
-		switch (key) {
-			case GLFW_KEY_ESCAPE: { exit(0); } break;
-			case GLFW_KEY_RIGHT:  { s_history.move(MOVE_RIGHT, s_anim); } break;
-			case GLFW_KEY_LEFT:   { s_history.move(MOVE_LEFT, s_anim); } break;
-			case GLFW_KEY_DOWN:   { s_history.move(MOVE_DOWN, s_anim); } break;
-			case GLFW_KEY_UP:     { s_history.move(MOVE_UP, s_anim); } break;
-			case GLFW_KEY_Z:      { s_history.undo(); } break;
-			case GLFW_KEY_X:      { s_history.redo(); } break;
-			case GLFW_KEY_N:      { s_history.new_game(s_anim); } break;
-		}
-
-		if (s_anim.tiles_changed()) {
-			s_anim_time0 = glfwGetTime();
-			s_anim_time1 = s_anim_time0 + ANIM_TIME;
+		if (key == GLFW_KEY_ESCAPE) {
+			exit(0);
+		} else {
+			if (s_autoplay) {
+				if (key == GLFW_KEY_P) { s_autoplay = false; }
+			} else {
+				s_anim.reset();
+				switch (key) {
+					case GLFW_KEY_RIGHT: { s_history.move(MOVE_RIGHT, s_anim); } break;
+					case GLFW_KEY_LEFT:  { s_history.move(MOVE_LEFT, s_anim); } break;
+					case GLFW_KEY_DOWN:  { s_history.move(MOVE_DOWN, s_anim); } break;
+					case GLFW_KEY_UP:    { s_history.move(MOVE_UP, s_anim); } break;
+					case GLFW_KEY_Z:     { s_history.undo(); } break;
+					case GLFW_KEY_X:     { s_history.redo(); } break;
+					case GLFW_KEY_N:     { s_history.new_game(s_anim); } break;
+					case GLFW_KEY_H:     { automove(s_history, s_anim); } break;
+					case GLFW_KEY_P:     { s_autoplay = true; automove(s_history, s_anim); } break;
+				}
+				start_anim(s_autoplay ? ANIM_TIME_AUTOPLAY : ANIM_TIME_NORMAL);
+			}
 		}
 	}
 }
@@ -486,11 +554,6 @@ int main(int /*argc*/, char** /*argv*/) {
 	glfwInit();
 	GLFWwindow *wnd = glfwCreateWindow(700, 700, "2048", NULL, NULL);
 
-	s_history.reset();
-	s_anim.reset();
-
-	glfwSetKeyCallback(wnd, &handle_key);
-
 	glfwMakeContextCurrent(wnd);
 
 	int tiles_tex_w, tiles_tex_h;
@@ -513,13 +576,16 @@ int main(int /*argc*/, char** /*argv*/) {
 
 	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
 
+	s_autoplay = false;
+	s_anim.reset();
+	s_history.reset();
 	s_history.new_game(s_anim);
-	s_anim_time0 = glfwGetTime();
-	s_anim_time1 = s_anim_time0 + ANIM_TIME;
+	start_anim(ANIM_TIME_NORMAL);
+	glfwSetKeyCallback(wnd, &handle_key);
 
 	while (!glfwWindowShouldClose(wnd)) {
 		double t = glfwGetTime();
-		float alpha = (t - s_anim_time0) / ANIM_TIME;
+		float alpha = (t - s_anim_time0) / (s_anim_time1 - s_anim_time0);
 		assert(alpha >= 0.0f);
 		if (alpha > 1.0f) { alpha = 1.0f; }
 
@@ -557,7 +623,21 @@ int main(int /*argc*/, char** /*argv*/) {
 		glfwSwapBuffers(wnd);
 
 		// if we're not animating then be nice and don't spam the CPU & GPU
-		if (t >= s_anim_time1) { glfwWaitEvents(); } else { glfwPollEvents(); }
+		if (t >= s_anim_time1) {
+			if (s_autoplay) {
+				s_anim.reset();
+				automove(s_history, s_anim);
+				start_anim(ANIM_TIME_AUTOPLAY);
+			}
+
+			if (s_anim_time1 > s_anim_time0) {
+				glfwPollEvents();
+			} else {
+				glfwWaitEvents();
+			}
+		} else {
+			glfwPollEvents();
+		}
 	}
 	glfwTerminate();
 	return 0;
