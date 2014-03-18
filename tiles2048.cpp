@@ -226,11 +226,9 @@ struct AnimState {
 };
 
 struct Board {
-	RNG rng;
 	BoardState state;
 
-	void reset(uint32_t seed = 0u) {
-		rng.reset(seed);
+	void reset() {
 		memset(&state, 0, sizeof(state));
 	}
 
@@ -269,7 +267,7 @@ struct Board {
 		return (count_free() == 0 && !has_direct_matches());
 	}
 
-	void place(int count, AnimState &anim) {
+	void place(int count, AnimState &anim, RNG &rng) {
 		assert(count > 0);
 		uint8_t free[NUM_TILES];
 		int nfree = count_free(free);
@@ -341,38 +339,56 @@ struct Board {
 		}
 	}
 
-	void move(int dir, AnimState &anim) {
+	void move(int dir, AnimState &anim, RNG &rng) {
 		assert(dir >= 0 && dir < 4);
 		anim.reset();
 		tilt(DIR_DX[dir], DIR_DY[dir], anim);
-		if (anim.tiles_changed()) { place(1, anim); }
+		if (anim.tiles_changed()) { place(1, anim, rng); }
 	}
 };
 
 struct BoardHistory {
 	enum { MAX_UNDO = 2048 };
 	Board boards[MAX_UNDO];
+	RNG rngs[MAX_UNDO];
 	int current;
 	int undo_avail;
 	int redo_avail;
 
-	void reset(uint32_t seed = 0u) {
+	void clear_history() {
+		// retain RNG state
+		rngs[0] = rngs[current];
 		current = 0;
 		undo_avail = 0;
 		redo_avail = 0;
-		boards[0].reset(seed);
+		boards[0].reset();
+	}
+
+	void reset(uint32_t seed = 0u) {
+		clear_history();
+		rngs[0].reset(seed);
+	}
+
+	void reset(const RNG &initial_state) {
+		clear_history();
+		rngs[0] = initial_state;
+	}
+
+	void new_game(AnimState &anim) {
+		clear_history();
+		boards[0].place(2, anim, rngs[0]);
 	}
 
 	const Board &get() const { return boards[current]; }
-	Board &get() { return boards[current]; }
+	const RNG &get_rng() const { return rngs[current]; }
 
-	Board &push() {
+	void push() {
 		if (undo_avail < MAX_UNDO) { ++undo_avail; }
 		redo_avail = 0;
 		int from = current;
 		current = (current + 1) % MAX_UNDO;
-		memcpy(&boards[current], &boards[from], sizeof(Board));
-		return boards[current];
+		boards[current] = boards[from];
+		rngs[current] = rngs[from];
 	}
 
 	Board &undo() {
@@ -393,16 +409,21 @@ struct BoardHistory {
 		return boards[current];
 	}
 
+#if 0
 	void place(int count, AnimState &anim) {
-		push().place(count, anim);
+		push();
+		boards[current].place(count, anim, rngs[current]);
 	}
 
 	void tilt(int dx, int dy, AnimState &anim) {
-		push().tilt(dx, dy, anim);
+		push();
+		boards[current].tilt(dx, dy, anim);
 	}
+#endif
 
 	void move(int dir, AnimState &anim) {
-		push().move(dir, anim);
+		push();
+		boards[current].move(dir, anim, rngs[current]);
 	}
 };
 
@@ -411,12 +432,6 @@ static AnimState s_anim;
 static double s_anim_time0;
 static double s_anim_time1;
 static const double ANIM_TIME = 0.2;
-
-static void new_game() {
-	s_anim.reset();
-	s_history.reset();
-	s_history.place(2, s_anim);
-}
 
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
@@ -430,7 +445,7 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 			case GLFW_KEY_UP:     { s_history.move(MOVE_UP, s_anim); } break;
 			case GLFW_KEY_Z:      { s_history.undo(); } break;
 			case GLFW_KEY_X:      { s_history.redo(); } break;
-			case GLFW_KEY_N:      { new_game(); } break;
+			case GLFW_KEY_N:      { s_history.new_game(s_anim); } break;
 		}
 
 		if (s_anim.tiles_changed()) {
@@ -502,7 +517,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
 	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
 
-	new_game();
+	s_history.new_game(s_anim);
 	s_anim_time0 = glfwGetTime();
 	s_anim_time1 = s_anim_time0 + ANIM_TIME;
 
