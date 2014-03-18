@@ -144,15 +144,50 @@ struct Board {
 		memset(&state, 0, sizeof(state));
 	}
 
+	int count_free(uint8_t *free = 0) const {
+		int nfree = 0;
+		for (int i = 0; i < NUM_TILES; ++i) {
+			if (free && (state[i] == 0)) { free[nfree] = i; }
+			nfree += (state[i] == 0);
+		}
+		assert(nfree >= 0);
+		return nfree;
+	}
+
+	bool has_direct_matches() const {
+		/* check rows */
+		for (int i = 0; i < TILES_Y; ++i) {
+			const uint8_t *at = (state + i*TILES_X);
+			for (int j = 1; j < TILES_X; ++j) {
+				if (at[0] && (at[0] == at[1])) { return true; }
+				++at;
+			}
+		}
+
+		/* check columns */
+		for (int j = 0; j < TILES_X; ++j) {
+			const uint8_t *at = (state + j);
+			for (int i = 1; i < TILES_Y; ++i) {
+				if (at[0] && (at[0] == at[TILES_X])) { return true; }
+				at += TILES_X;
+			}
+		}
+		return false;
+	}
+
+	bool finished() const {
+		return (count_free() == 0 && !has_direct_matches());
+	}
+
 	void place(AnimState &anim) {
 		uint8_t free[NUM_TILES];
-		int nfree = 0;
-		for (int i = 0; i < NUM_TILES; ++i) { if (state[i] == 0) { free[nfree++] = i; } }
-		assert(nfree > 0);
-		int value = (rng.next_n(10) < 9 ? 1 : 2);
-		int which = rng.next_n(nfree);
-		state[free[which]] = value;
-		anim.new_tile(free[which]);
+		int nfree = count_free(free);
+		if (nfree) {
+			int value = (rng.next_n(10) < 9 ? 1 : 2);
+			int which = rng.next_n(nfree);
+			state[free[which]] = value;
+			anim.new_tile(free[which]);
+		}
 	}
 
 	void tilt(int dx, int dy, AnimState &anim) {
