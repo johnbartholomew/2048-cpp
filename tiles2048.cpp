@@ -182,9 +182,9 @@ struct AnimState {
 		tile.x.push(0.0f, x);
 		tile.y.push(0.0f, y);
 		tile.scale.push(0.0f, 0.0f);
-		tile.scale.push(0.6999f, 0.0f);
-		tile.scale.push(0.7f, 0.2f);
-		tile.scale.push(0.85f, 1.2f);
+		tile.scale.push(0.4999f, 0.0f);
+		tile.scale.push(0.5f, 0.2f);
+		tile.scale.push(0.75f, 1.25f);
 		tile.scale.push(1.0f, 1.0f);
 	}
 
