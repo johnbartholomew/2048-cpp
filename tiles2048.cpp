@@ -69,18 +69,23 @@ struct Slide {
 	uint16_t to;
 };
 
+#define PRINT_ANIM 0
+
 struct AnimState {
 	Slide merges[NUM_TILES];
 	Slide slides[NUM_TILES];
 	int new_tiles[NUM_TILES];
+	int static_tiles[NUM_TILES];
 	int num_merges;
 	int num_slides;
 	int num_new_tiles;
+	int num_static;
 
 	void reset() {
 		num_merges = 0;
 		num_slides = 0;
 		num_new_tiles = 0;
+		num_static = 0;
 	}
 
 	void merge(int from, int to) {
@@ -89,7 +94,7 @@ struct AnimState {
 		assert(from >= 0 && from < NUM_TILES);
 		merges[num_merges].from = from;
 		merges[num_merges].to = to;
-#if 0
+#if PRINT_ANIM
 		printf("merge %d,%d -> %d,%d\n",
 				from % TILES_X, from / TILES_X,
 				to % TILES_X, to / TILES_X);
@@ -101,22 +106,29 @@ struct AnimState {
 		assert(num_slides < NUM_TILES);
 		assert(to >= 0 && to < NUM_TILES);
 		assert(from >= 0 && from < NUM_TILES);
-		if (from == to) { return; }
-		slides[num_slides].from = from;
-		slides[num_slides].to = to;
-#if 0
-		printf("slide %d,%d -> %d,%d\n",
-				from % TILES_X, from / TILES_X,
-				to % TILES_X, to / TILES_X);
+		if (from == to) {
+			static_tiles[num_static] = from;
+			++num_static;
+#if PRINT_ANIM
+			printf("static %d,%d\n", from % TILES_X, from / TILES_X);
 #endif
-		++num_slides;
+		} else {
+			slides[num_slides].from = from;
+			slides[num_slides].to = to;
+#if PRINT_ANIM
+			printf("slide %d,%d -> %d,%d\n",
+					from % TILES_X, from / TILES_X,
+					to % TILES_X, to / TILES_X);
+#endif
+			++num_slides;
+		}
 	}
 
 	void new_tile(int where) {
 		assert(num_new_tiles < NUM_TILES);
 		assert(where >= 0 && where < NUM_TILES);
 		new_tiles[num_new_tiles] = where;
-#if 0
+#if PRINT_ANIM
 		printf("new tile @ %d,%d\n", where % TILES_X, where / TILES_X);
 #endif
 		++num_new_tiles;
