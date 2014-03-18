@@ -187,8 +187,8 @@ struct Board {
 				from += step_minor;
 			}
 			if (last_value) {
+				anim.slide(last_from, to);
 				state[to] = last_value;
-				if (last_from != to) { anim.slide(last_from, to); }
 				to += step_minor;
 			}
 			while (to != stop) {
