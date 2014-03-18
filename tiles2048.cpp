@@ -307,7 +307,7 @@ int main(int /*argc*/, char** /*argv*/) {
 	ogl_LoadFunctions();
 
 	int tiles_tex_w, tiles_tex_h;
-	uint8_t *tiles_tex_data = stbi_load("tiles.png", &tiles_tex_w, &tiles_tex_h, 0, 3);
+	uint8_t *tiles_tex_data = stbi_load("tiles.png", &tiles_tex_w, &tiles_tex_h, 0, 4);
 	GLuint tex_id;
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glGenTextures(1, &tex_id);
@@ -318,10 +318,13 @@ int main(int /*argc*/, char** /*argv*/) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, tiles_tex_w, tiles_tex_h, 0, GL_RGB, GL_UNSIGNED_BYTE, tiles_tex_data);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tiles_tex_w, tiles_tex_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, tiles_tex_data);
 	glEnable(GL_TEXTURE_2D);
 	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_BLEND);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
 
 	while (!glfwWindowShouldClose(wnd)) {
 		glfwWaitEvents();
@@ -337,6 +340,17 @@ int main(int /*argc*/, char** /*argv*/) {
 		glLoadIdentity();
 		glTranslatef((float)wnd_w * 0.5f - 256.0f, (float)wnd_h * 0.5f - 256.0f, 0.0f);
 
+		glDisable(GL_TEXTURE_2D);
+		glColor4ub(187, 173, 160, 255);
+		glBegin(GL_QUADS);
+		glVertex2f(-16.0f, -16.0f);
+		glVertex2f(528.0f, -16.0f);
+		glVertex2f(528.0f, 528.0f);
+		glVertex2f(-16.0f, 528.0f);
+		glEnd();
+
+		glEnable(GL_TEXTURE_2D);
+		glColor4ub(255, 255, 255, 255);
 		glBegin(GL_QUADS);
 		for (int i = 0; i < 4; ++i) {
 			for (int j = 0; j < 4; ++j) {
