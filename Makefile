@@ -7,11 +7,8 @@ CPPFLAGS :=
 .PHONY: all
 all: tiles2048 tiles.png
 
-tiles2048: tiles2048.o stb_image.o gl_core21.o
+tiles2048: tiles2048.o stb_image.o
 	g++ $(CXXFLAGS) -o $@ $^ -lglfw -lGL
-
-gl_core21.o: gl_core21.c
-	gcc $(CFLAGS) $(CPPFLAGS) -o $@ -c $<
 
 stb_image.o: stb_image.c
 	gcc $(CFLAGS) $(CPPFLAGS) -w -o $@ -c $<
@@ -25,4 +22,4 @@ tiles.png: tiles.svg
 
 .PHONY: clean
 clean:
-	rm -f tiles2048.o stb_image.o gl_core21.o tiles2048 tiles.png
+	rm -f tiles2048.o stb_image.o tiles2048 tiles.png

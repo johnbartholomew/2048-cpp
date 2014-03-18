@@ -1,7 +1,6 @@
 #define STBI_HEADER_FILE_ONLY
 #include "stb_image.c"
 
-#include "gl_core21.h"
 #include <GLFW/glfw3.h>
 
 #include <cstring>
@@ -468,7 +467,6 @@ int main(int /*argc*/, char** /*argv*/) {
 	glfwSetKeyCallback(wnd, &handle_key);
 
 	glfwMakeContextCurrent(wnd);
-	ogl_LoadFunctions();
 
 	int tiles_tex_w, tiles_tex_h;
 	uint8_t *tiles_tex_data = stbi_load("tiles.png", &tiles_tex_w, &tiles_tex_h, 0, 4);
