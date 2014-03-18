@@ -66,90 +66,163 @@ typedef uint8_t BoardState[NUM_TILES];
 
 #define PRINT_ANIM 0
 
-struct Slide {
-	uint16_t from;
-	uint16_t to;
+enum EasingStyle {
+	EASE_LINEAR
+};
+
+static float clampf(float x, float a, float b) {
+	return (x < a ? a : (x > b ? b : x));
+}
+
+struct AnimCurve {
+	enum { MAX_KEYS = 8 };
+	float ky[MAX_KEYS];
+	float kt[MAX_KEYS];
+	int nkeys;
+	// int easing;
+
+	void reset() {
+		nkeys = 0;
+	}
+
+	void push(float t, float y) {
+		assert(nkeys < MAX_KEYS);
+		assert(t >= 0.0f && t <= 1.0f);
+		assert(nkeys == 0 || t > kt[nkeys-1]);
+		ky[nkeys] = y;
+		kt[nkeys] = t;
+		++nkeys;
+	}
+
+	float eval(float at) const {
+		if (nkeys == 0) { return 0.0f; }
+		if (nkeys == 1) { return ky[0]; }
+
+		at = clampf(at, 0.0f, 1.0f);
+		for (int i = 1; i < nkeys; ++i) {
+			if (at < kt[i]) {
+				float alpha = (at - kt[i-1]) / (kt[i] - kt[i-1]);
+				return (1.0f - alpha)*ky[i-1] + alpha*ky[i];
+			}
+		}
+		return ky[nkeys - 1];
+	}
+};
+
+static void tile_idx_to_xy(int where, float *x, float *y) {
+	assert(where >= 0 && where < NUM_TILES);
+	assert(x);
+	assert(y);
+	*x = 128.0f * (where % TILES_X);
+	*y = 128.0f * (where / TILES_X);
+}
+
+struct TileAnim {
+	int value;
+	AnimCurve x;
+	AnimCurve y;
+	AnimCurve scale;
+	void reset() {
+		value = 15;
+		x.reset();
+		y.reset();
+		scale.reset();
+	}
 };
 
 struct Board;
-struct TileAnimState;
 
 struct AnimState {
-	enum TileStatus {
-		TILE_BLANK     = 0,
-		TILE_SLIDE_DST = (1 << 0),
-		TILE_SLIDE_SRC = (1 << 1),
-		TILE_MERGE     = (1 << 2),
-		TILE_NEW       = (1 << 3),
-
-		TILE_STATIONARY = (TILE_SLIDE_DST | TILE_SLIDE_SRC)
-	};
-	uint8_t status[NUM_TILES];
-	Slide slides[NUM_TILES];
-	int new_tiles[NUM_TILES];
-	int num_slides;
-	int num_new_tiles;
-
-	int evaluate(float alpha, const Board &board, TileAnimState *tiles) const;
+	TileAnim tiles[NUM_TILES*2];
+	int ntiles;
+	bool moved;
 
 	bool tiles_changed() const {
-		return (num_new_tiles | num_slides);
+		return moved;
 	}
 
 	void reset() {
-		num_slides = 0;
-		num_new_tiles = 0;
-		memset(status, 0, sizeof(status));
+		ntiles = 0;
+		moved = false;
 	}
 
-	void add_slide(int from, int to) {
-		assert(num_slides < NUM_TILES);
+	void add_slide(int from, int to, int value) {
+		assert(ntiles < NUM_TILES*2);
 		assert(to >= 0 && to < NUM_TILES);
 		assert(from >= 0 && from < NUM_TILES);
-		slides[num_slides].from = from;
-		slides[num_slides].to = to;
-		++num_slides;
+
+		float x0, y0, x1, y1;
+		tile_idx_to_xy(from, &x0, &y0);
+		tile_idx_to_xy(to, &x1, &y1);
+
+		TileAnim &tile = tiles[ntiles++];
+		tile.reset();
+		tile.value = value;
+		tile.x.push(0.0f, x0);
+		tile.x.push(0.75f, x1);
+		tile.y.push(0.0f, y0);
+		tile.y.push(0.75f, y1);
+		tile.scale.push(0.0f, 1.0f);
 	}
 
-	void add_new_tile(int where) {
-		assert(num_new_tiles < NUM_TILES);
+	void add_slide_and_vanish(int from, int to, int value) {
+		add_slide(from, to, value);
+		tiles[ntiles-1].scale.push(0.7f, 1.0f);
+		tiles[ntiles-1].scale.push(1.0f, 0.2f);
+	}
+
+	void add_pop_tile(int where, int value) {
+		assert(ntiles < NUM_TILES*2);
 		assert(where >= 0 && where < NUM_TILES);
-		new_tiles[num_new_tiles] = where;
-		++num_new_tiles;
+
+		float x, y;
+		tile_idx_to_xy(where, &x, &y);
+		TileAnim &tile = tiles[ntiles++];
+		tile.reset();
+		tile.value = value;
+		tile.x.push(0.0f, x);
+		tile.y.push(0.0f, y);
+		tile.scale.push(0.0f, 0.0f);
+		tile.scale.push(0.6999f, 0.0f);
+		tile.scale.push(0.7f, 0.2f);
+		tile.scale.push(0.85f, 1.2f);
+		tile.scale.push(1.0f, 1.0f);
 	}
 
-	void merge(int from, int to) {
-		if (from != to) { add_slide(from, to); }
-		if (!status[to]) { add_new_tile(to); }
-		status[from] |= TILE_SLIDE_SRC;
-		status[to] |= TILE_SLIDE_DST;
-		status[to] |= TILE_MERGE;
-#if PRINT_ANIM
-		printf("merge %d,%d -> %d,%d\n",
-				from % TILES_X, from / TILES_X,
-				to % TILES_X, to / TILES_X);
-#endif
+	void add_place_tile(int where, int value) {
+		assert(ntiles < NUM_TILES*2);
+		assert(where >= 0 && where < NUM_TILES);
+
+		float x, y;
+		tile_idx_to_xy(where, &x, &y);
+		TileAnim &tile = tiles[ntiles++];
+		tile.reset();
+		tile.value = value;
+		tile.x.push(0.0f, x);
+		tile.y.push(0.0f, y);
+		tile.scale.push(0.0f, 0.0f);
+		tile.scale.push(0.6999f, 0.0f);
+		tile.scale.push(0.7f, 0.2f);
+		tile.scale.push(1.0f, 1.0f);
 	}
 
-	void slide(int from, int to) {
-		if (from != to) { add_slide(from, to); }
-		status[from] |= TILE_SLIDE_SRC;
-		status[to] |= TILE_SLIDE_DST;
-#if PRINT_ANIM
-		printf("slide %d,%d -> %d,%d\n",
-				from % TILES_X, from / TILES_X,
-				to % TILES_X, to / TILES_X);
-#endif
+	void merge(int from0, int from1, int to, int old_value) {
+		add_slide_and_vanish(from0, to, old_value);
+		add_slide_and_vanish(from1, to, old_value);
+		add_pop_tile(to, old_value + 1);
+		moved = true;
+	}
+
+	void slide(int from, int to, int value) {
+		add_slide(from, to, value);
+		if (from != to) { moved = true; }
 	}
 
 	void blank(int /*where*/) {}
 
-	void new_tile(int where) {
-		add_new_tile(where);
-		status[where] |= TILE_NEW;
-#if PRINT_ANIM
-		printf("new tile @ %d,%d\n", where % TILES_X, where / TILES_X);
-#endif
+	void new_tile(int where, int value) {
+		add_place_tile(where, value);
+		moved = true;
 	}
 };
 
@@ -204,7 +277,7 @@ struct Board {
 			int value = (rng.next_n(10) < 9 ? 1 : 2);
 			int which = rng.next_n(nfree);
 			state[free[which]] = value;
-			anim.new_tile(free[which]);
+			anim.new_tile(free[which], value);
 		}
 	}
 
@@ -224,20 +297,14 @@ struct Board {
 			int last_value = 0;
 			int last_from = from;
 			while (from != stop) {
-#if 0
-				printf("%d : [%d,%d] %d -> [%d,%d] %d\n",
-						last_value, from % TILES_X,from / TILES_X, state[from],
-						to % TILES_X, to / TILES_X, state[to]);
-#endif
 				if (state[from]) {
 					if (last_value) {
 						if (last_value == state[from]) {
-							anim.merge(last_from, to);
-							anim.merge(from, to);
+							anim.merge(last_from, from, to, last_value);
 							state[to] = last_value + 1;
 							last_value = 0;
 						} else {
-							anim.slide(last_from, to);
+							anim.slide(last_from, to, last_value);
 							int tmp = state[from];
 							state[to] = last_value;
 							last_value = tmp;
@@ -252,7 +319,7 @@ struct Board {
 				from += step_minor;
 			}
 			if (last_value) {
-				anim.slide(last_from, to);
+				anim.slide(last_from, to, last_value);
 				state[to] = last_value;
 				to += step_minor;
 			}
@@ -335,7 +402,7 @@ static BoardHistory s_history;
 static AnimState s_anim;
 static double s_anim_time0;
 static double s_anim_time1;
-static const double ANIM_TIME = 0.25;
+static const double ANIM_TIME = 0.2;
 
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
@@ -360,112 +427,23 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 	}
 }
 
-struct TileAnimState {
-	int value;
-	float x;
-	float y;
-	float scale;
-};
-
-float clamp(float x, float a, float b) {
-	return (x < a ? a : (x > b ? b : x));
-}
-
-int AnimState::evaluate(float alpha, const Board &board, TileAnimState *tiles) const {
-	assert(tiles);
-	int ntiles = 0;
-	for (int i = 0; i < 4; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			TileAnimState &tile = tiles[ntiles++];
-			tile.value = status[i*TILES_X + j];
-			tile.x = j * 128.0f;
-			tile.y = i * 128.0f;
-			tile.scale = 1.0f;
-		}
-	}
-#if 0
-	int ntiles = 0;
-	for (int i = 0; i < 4; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			const uint8_t flags = status[i*TILES_X + j];
-			int value = board.state[i*4+j];
-			if (flags != TILE_STATIONARY) { continue; }
-			// if (!value) { continue; }
-			TileAnimState &tile = tiles[ntiles++];
-			tile.value = value;
-			tile.x = j * 128.0f;
-			tile.y = i * 128.0f;
-			tile.scale = 1.0f;
-		}
-	}
-
-	const float motion_alpha = clamp(alpha * (1.0f / 0.75f), 0.0f, 1.0f);
-	const float pop_alpha = clamp((alpha - 0.75f) * (1.0f / 0.25f), 0.0f, 1.0f);
-
-	for (int i = 0; i < num_slides; ++i) {
-		const Slide &slide = slides[i];
-		assert(slide.to != slide.from);
-
-		if ((status[slide.to] & TILE_MERGE) != 0 && (motion_alpha == 1.0f)) {
-			continue;
-		}
-
-		const float x0 = 128.0f * (slide.from % TILES_X);
-		const float y0 = 128.0f * (slide.from / TILES_X);
-		const float x1 = 128.0f * (slide.to % TILES_X);
-		const float y1 = 128.0f * (slide.to / TILES_X);
-
-		TileAnimState &tile = tiles[ntiles++];
-		if (status[slide.to] & TILE_MERGE) {
-			tile.value = board.state[slide.to] - 1;
-		} else {
-			tile.value = board.state[slide.to];
-		}
-		const float inv_alpha = 1.0f - motion_alpha;
-		tile.x = inv_alpha*x0 + motion_alpha*x1;
-		tile.y = inv_alpha*y0 + motion_alpha*y1;
-		tile.scale = 1.0f;
-	}
-
-	if (motion_alpha == 1.0f) {
-		for (int i = 0; i < num_new_tiles; ++i) {
-			const int where = new_tiles[i];
-			TileAnimState &tile = tiles[ntiles++];
-			tile.value = board.state[where];
-			tile.x = 128.0f * (where % TILES_X);
-			tile.y = 128.0f * (where / TILES_X);
-			if (pop_alpha <= 0.5f) {
-				tile.scale = pop_alpha * 2.4f;
-			} else {
-				tile.scale = 1.4f - pop_alpha * 0.4f;
-			}
-		}
-	}
-
-#endif
-	assert(ntiles < NUM_TILES*2);
-
-	return ntiles;
-}
-
-static void render_anim(float alpha, const Board &board, const AnimState &anim) {
-	TileAnimState tiles[NUM_TILES * 2];
-	const int ntiles = anim.evaluate(alpha, board, tiles);
-
-	for (int i = 0; i < ntiles; ++i) {
-		const TileAnimState &tile = tiles[i];
+static void render_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
+	for (int i = 0; i < anim.ntiles; ++i) {
+		const TileAnim &tile = anim.tiles[i];
+		float x = tile.x.eval(alpha) + 64.0f;
+		float y = tile.y.eval(alpha) + 64.0f;
+		float extent = tile.scale.eval(alpha) * 64.0f;
 		const float u = (tile.value % 4) * 0.25f;
 		const float v = (tile.value / 4) * 0.25f;
-		glColor4f(1.0f, 1.0f, 1.0f, tile.scale);
-		glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(tile.x, tile.y);
-		glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(tile.x + 128.0f, tile.y);
-		glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(tile.x + 128.0f, tile.y + 128.0f);
-		glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(tile.x, tile.y + 128.0f);
+		glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+		glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x - extent, y - extent);
+		glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x + extent, y - extent);
+		glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x + extent, y + extent);
+		glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x - extent, y + extent);
 	}
 }
 
 static void render_static(const Board &board) {
-	printf("render static\n");
 	for (int i = 0; i < NUM_TILES; ++i) {
 		const int value = board.state[i];
 		if (value == 0) { continue; }
