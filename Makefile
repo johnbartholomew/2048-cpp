@@ -21,6 +21,7 @@ tiles2048.o: tiles2048.cpp
 
 tiles.png: tiles.svg
 	inkscape --export-png=$@ --export-area-page $<
+	optipng -clobber -strip all -i 0 $@
 
 .PHONY: clean
 clean:
