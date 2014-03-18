@@ -455,6 +455,7 @@ static void render_anim(float alpha, const Board &board, const AnimState &anim) 
 		const TileAnimState &tile = tiles[i];
 		const float u = (tile.value % 4) * 0.25f;
 		const float v = (tile.value / 4) * 0.25f;
+		glColor4f(1.0f, 1.0f, 1.0f, tile.scale);
 		glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(tile.x, tile.y);
 		glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(tile.x + 128.0f, tile.y);
 		glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(tile.x + 128.0f, tile.y + 128.0f);
