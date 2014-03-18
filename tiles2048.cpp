@@ -239,7 +239,7 @@ struct Board {
 			if (free && (state[i] == 0)) { free[nfree] = i; }
 			nfree += (state[i] == 0);
 		}
-		assert(nfree >= 0);
+		assert(nfree >= 0 && nfree <= NUM_TILES);
 		return nfree;
 	}
 
