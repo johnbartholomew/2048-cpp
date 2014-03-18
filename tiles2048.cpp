@@ -473,7 +473,7 @@ static void render_static(const Board &board) {
 
 int main(int /*argc*/, char** /*argv*/) {
 	glfwInit();
-	GLFWwindow *wnd = glfwCreateWindow(600, 768, "2048", NULL, NULL);
+	GLFWwindow *wnd = glfwCreateWindow(700, 700, "2048", NULL, NULL);
 
 	s_history.reset();
 	s_anim.reset();
