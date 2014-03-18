@@ -64,74 +64,91 @@ struct RNG {
 
 typedef uint8_t BoardState[NUM_TILES];
 
+#define PRINT_ANIM 0
+
 struct Slide {
 	uint16_t from;
 	uint16_t to;
 };
 
-#define PRINT_ANIM 0
+struct Board;
+struct TileAnimState;
 
 struct AnimState {
-	Slide merges[NUM_TILES];
+	enum TileStatus {
+		TILE_BLANK     = 0,
+		TILE_SLIDE_DST = (1 << 0),
+		TILE_SLIDE_SRC = (1 << 1),
+		TILE_MERGE     = (1 << 2),
+		TILE_NEW       = (1 << 3),
+
+		TILE_STATIONARY = (TILE_SLIDE_DST | TILE_SLIDE_SRC)
+	};
+	uint8_t status[NUM_TILES];
 	Slide slides[NUM_TILES];
 	int new_tiles[NUM_TILES];
-	int static_tiles[NUM_TILES];
-	int num_merges;
 	int num_slides;
 	int num_new_tiles;
-	int num_static;
+
+	int evaluate(float alpha, const Board &board, TileAnimState *tiles) const;
+
+	bool tiles_changed() const {
+		return (num_new_tiles | num_slides);
+	}
 
 	void reset() {
-		num_merges = 0;
 		num_slides = 0;
 		num_new_tiles = 0;
-		num_static = 0;
+		memset(status, 0, sizeof(status));
+	}
+
+	void add_slide(int from, int to) {
+		assert(num_slides < NUM_TILES);
+		assert(to >= 0 && to < NUM_TILES);
+		assert(from >= 0 && from < NUM_TILES);
+		slides[num_slides].from = from;
+		slides[num_slides].to = to;
+		++num_slides;
+	}
+
+	void add_new_tile(int where) {
+		assert(num_new_tiles < NUM_TILES);
+		assert(where >= 0 && where < NUM_TILES);
+		new_tiles[num_new_tiles] = where;
+		++num_new_tiles;
 	}
 
 	void merge(int from, int to) {
-		assert(num_merges < NUM_TILES);
-		assert(to >= 0 && to < NUM_TILES);
-		assert(from >= 0 && from < NUM_TILES);
-		merges[num_merges].from = from;
-		merges[num_merges].to = to;
+		if (from != to) { add_slide(from, to); }
+		status[from] |= TILE_SLIDE_SRC;
+		status[to] |= TILE_SLIDE_DST;
+		status[to] |= TILE_MERGE;
 #if PRINT_ANIM
 		printf("merge %d,%d -> %d,%d\n",
 				from % TILES_X, from / TILES_X,
 				to % TILES_X, to / TILES_X);
 #endif
-		++num_merges;
 	}
 
 	void slide(int from, int to) {
-		assert(num_slides < NUM_TILES);
-		assert(to >= 0 && to < NUM_TILES);
-		assert(from >= 0 && from < NUM_TILES);
-		if (from == to) {
-			static_tiles[num_static] = from;
-			++num_static;
+		if (from != to) { add_slide(from, to); }
+		status[from] |= TILE_SLIDE_SRC;
+		status[to] |= TILE_SLIDE_DST;
 #if PRINT_ANIM
-			printf("static %d,%d\n", from % TILES_X, from / TILES_X);
+		printf("slide %d,%d -> %d,%d\n",
+				from % TILES_X, from / TILES_X,
+				to % TILES_X, to / TILES_X);
 #endif
-		} else {
-			slides[num_slides].from = from;
-			slides[num_slides].to = to;
-#if PRINT_ANIM
-			printf("slide %d,%d -> %d,%d\n",
-					from % TILES_X, from / TILES_X,
-					to % TILES_X, to / TILES_X);
-#endif
-			++num_slides;
-		}
 	}
 
+	void blank(int /*where*/) {}
+
 	void new_tile(int where) {
-		assert(num_new_tiles < NUM_TILES);
-		assert(where >= 0 && where < NUM_TILES);
-		new_tiles[num_new_tiles] = where;
+		add_new_tile(where);
+		status[where] |= TILE_NEW;
 #if PRINT_ANIM
 		printf("new tile @ %d,%d\n", where % TILES_X, where / TILES_X);
 #endif
-		++num_new_tiles;
 	}
 };
 
@@ -239,6 +256,7 @@ struct Board {
 				to += step_minor;
 			}
 			while (to != stop) {
+				anim.blank(to);
 				state[to] = 0;
 				to += step_minor;
 			}
@@ -251,6 +269,7 @@ struct Board {
 		assert(dir >= 0 && dir < 4);
 		anim.reset();
 		tilt(DIR_DX[dir], DIR_DY[dir], anim);
+		if (anim.tiles_changed()) { place(anim); }
 	}
 };
 
@@ -313,19 +332,130 @@ struct BoardHistory {
 
 static BoardHistory s_history;
 static AnimState s_anim;
+static double s_anim_time0;
+static double s_anim_time1;
+static const double ANIM_TIME = 0.25;
 
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
+		s_anim.reset();
+
 		switch (key) {
 			case GLFW_KEY_ESCAPE: { exit(0); } break;
-			case GLFW_KEY_SPACE:  { s_anim.reset(); s_history.place(s_anim); } break;
-			case GLFW_KEY_RIGHT:  { s_anim.reset(); s_history.move(MOVE_RIGHT, s_anim); } break;
-			case GLFW_KEY_LEFT:   { s_anim.reset(); s_history.move(MOVE_LEFT, s_anim); } break;
-			case GLFW_KEY_DOWN:   { s_anim.reset(); s_history.move(MOVE_DOWN, s_anim); } break;
-			case GLFW_KEY_UP:     { s_anim.reset(); s_history.move(MOVE_UP, s_anim); } break;
-			case GLFW_KEY_Z:      { s_anim.reset(); s_history.undo(); } break;
-			case GLFW_KEY_X:      { s_anim.reset(); s_history.redo(); } break;
+			case GLFW_KEY_SPACE:  { s_history.place(s_anim); } break;
+			case GLFW_KEY_RIGHT:  { s_history.move(MOVE_RIGHT, s_anim); } break;
+			case GLFW_KEY_LEFT:   { s_history.move(MOVE_LEFT, s_anim); } break;
+			case GLFW_KEY_DOWN:   { s_history.move(MOVE_DOWN, s_anim); } break;
+			case GLFW_KEY_UP:     { s_history.move(MOVE_UP, s_anim); } break;
+			case GLFW_KEY_Z:      { s_history.undo(); } break;
+			case GLFW_KEY_X:      { s_history.redo(); } break;
+			case GLFW_KEY_R:      { s_history.reset(); } break;
 		}
+
+		if (s_anim.tiles_changed()) {
+			s_anim_time0 = glfwGetTime();
+			s_anim_time1 = s_anim_time0 + ANIM_TIME;
+		}
+	}
+}
+
+struct TileAnimState {
+	int value;
+	float x;
+	float y;
+	float scale;
+};
+
+float clamp(float x, float a, float b) {
+	return (x < a ? a : (x > b ? b : x));
+}
+
+int AnimState::evaluate(float alpha, const Board &board, TileAnimState *tiles) const {
+	assert(tiles);
+	int ntiles = 0;
+	for (int i = 0; i < 4; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			TileAnimState &tile = tiles[ntiles++];
+			tile.value = status[i*TILES_X + j];
+			tile.x = j * 128.0f;
+			tile.y = i * 128.0f;
+			tile.scale = 1.0f;
+		}
+	}
+#if 0
+	int ntiles = 0;
+	for (int i = 0; i < 4; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			const uint8_t flags = status[i*TILES_X + j];
+			int value = board.state[i*4+j];
+			if ((flags & TILE_STATIONARY) != TILE_STATIONARY) { continue; }
+			// if (!value) { continue; }
+			TileAnimState &tile = tiles[ntiles++];
+			tile.value = value;
+			tile.x = j * 128.0f;
+			tile.y = i * 128.0f;
+			tile.scale = 1.0f;
+		}
+	}
+
+	const float motion_alpha = clamp(alpha * (1.0f / 0.75f), 0.0f, 1.0f);
+	const float pop_alpha = clamp((alpha - 0.75f) * (1.0f / 0.25f), 0.0f, 1.0f);
+
+	for (int i = 0; i < num_slides; ++i) {
+		const Slide &slide = slides[i];
+		assert(slide.to != slide.from);
+
+		if ((status[slide.to] & TILE_MERGE) == 0 && (motion_alpha == 1.0f)) {
+			continue;
+		}
+
+		const float x0 = 128.0f * (slide.from % TILES_X);
+		const float y0 = 128.0f * (slide.from / TILES_X);
+		const float x1 = 128.0f * (slide.to % TILES_X);
+		const float y1 = 128.0f * (slide.to / TILES_X);
+
+		TileAnimState &tile = tiles[ntiles++];
+		if (status[slide.to] & TILE_MERGE) {
+			tile.value = board.state[slide.to] - 1;
+		} else {
+			tile.value = board.state[slide.to];
+		}
+		const float inv_alpha = 1.0f - motion_alpha;
+		tile.x = inv_alpha*x0 + motion_alpha*x1;
+		tile.y = inv_alpha*y0 + motion_alpha*y1;
+		tile.scale = 1.0f;
+	}
+
+	if (motion_alpha == 1.0f) {
+		for (int i = 0; i < num_new_tiles; ++i) {
+			const int where = new_tiles[i];
+			TileAnimState &tile = tiles[ntiles++];
+			tile.value = board.state[where];
+			tile.x = 128.0f * (where % TILES_X);
+			tile.y = 128.0f * (where / TILES_X);
+			if (pop_alpha <= 0.5f) {
+				tile.scale = pop_alpha * 2.4f;
+			} else {
+				tile.scale = 1.4f - pop_alpha * 0.4f;
+			}
+		}
+	}
+#endif
+	return ntiles;
+}
+
+static void render_anim(float alpha, const Board &board, const AnimState &anim) {
+	TileAnimState tiles[NUM_TILES * 2];
+	const int ntiles = anim.evaluate(alpha, board, tiles);
+
+	for (int i = 0; i < ntiles; ++i) {
+		const TileAnimState &tile = tiles[i];
+		const float u = (tile.value % 4) * 0.25f;
+		const float v = (tile.value / 4) * 0.25f;
+		glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(tile.x, tile.y);
+		glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(tile.x + 128.0f, tile.y);
+		glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(tile.x + 128.0f, tile.y + 128.0f);
+		glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(tile.x, tile.y + 128.0f);
 	}
 }
 
@@ -361,8 +491,14 @@ int main(int /*argc*/, char** /*argv*/) {
 
 	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
 
+	s_anim_time0 = s_anim_time1 = glfwGetTime();
+
 	while (!glfwWindowShouldClose(wnd)) {
-		glfwWaitEvents();
+		double t = glfwGetTime();
+		float alpha = (t - s_anim_time0) / ANIM_TIME;
+		assert(alpha >= 0.0f);
+		if (alpha > 1.0f) { alpha = 1.0f; }
+
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		int wnd_w, wnd_h;
@@ -370,7 +506,7 @@ int main(int /*argc*/, char** /*argv*/) {
 		glViewport(0, 0, wnd_w, wnd_h);
 		glMatrixMode(GL_PROJECTION);
 		glLoadIdentity();
-		glOrtho(0.0, (double)wnd_w, 0.0, (double)wnd_h, -1.0, 1.0);
+		glOrtho(0.0, (double)wnd_w, (double)wnd_h, 0.0, -1.0, 1.0);
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
 		glTranslatef((float)wnd_w * 0.5f - 256.0f, (float)wnd_h * 0.5f - 256.0f, 0.0f);
@@ -378,31 +514,22 @@ int main(int /*argc*/, char** /*argv*/) {
 		glDisable(GL_TEXTURE_2D);
 		glColor4ub(187, 173, 160, 255);
 		glBegin(GL_QUADS);
-		glVertex2f(-16.0f, -16.0f);
-		glVertex2f(528.0f, -16.0f);
-		glVertex2f(528.0f, 528.0f);
 		glVertex2f(-16.0f, 528.0f);
+		glVertex2f(528.0f, 528.0f);
+		glVertex2f(528.0f, -16.0f);
+		glVertex2f(-16.0f, -16.0f);
 		glEnd();
 
 		glEnable(GL_TEXTURE_2D);
 		glColor4ub(255, 255, 255, 255);
 		glBegin(GL_QUADS);
-		for (int i = 0; i < 4; ++i) {
-			for (int j = 0; j < 4; ++j) {
-				float y = (3 - i) * 128.0f;
-				float x = j * 128.0f;
-				int value = s_history.get().state[i*4+j];
-				float u = (value % 4) * 0.25f;
-				float v = (value / 4) * 0.25f;
-				glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x, y);
-				glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x+128.0f, y);
-				glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x+128.0f, y+128.0f);
-				glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x, y+128.0f);
-			}
-		}
+		render_anim(alpha, s_history.get(), s_anim);
 		glEnd();
 
 		glfwSwapBuffers(wnd);
+
+		// if we're not animating then be nice and don't spam the CPU & GPU
+		if (t >= s_anim_time1) { glfwWaitEvents(); } else { glfwPollEvents(); }
 	}
 	glfwTerminate();
 	return 0;
