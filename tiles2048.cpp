@@ -436,10 +436,10 @@ static int ai_eval_board(const Board &board) {
 typedef int (*Evaluator)(const Board &board);
 typedef int (*Searcher)(Evaluator eval, const Board &board, const RNG &rng, int depth, int *move);
 
-static int ai_search_cheating(Evaluator eval, const Board &board, const RNG &rng, int lookahead, int *move) {
+static int ai_search_cheating(Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *move) {
 	assert(lookahead >= 0);
 	if (move) { *move = -1; }
-	if (lookahead == 0) { return eval(board); }
+	if (lookahead == 0) { return evalfn(board); }
 
 	Board next_state;
 	RNG next_rng;
@@ -448,7 +448,7 @@ static int ai_search_cheating(Evaluator eval, const Board &board, const RNG &rng
 		next_state = board;
 		next_rng = rng;
 		if (!next_state.move(i, 0, next_rng)) { continue; } // ignore null moves
-		int score = ai_search_cheating(eval, next_state, next_rng, lookahead - 1, 0);
+		int score = ai_search_cheating(evalfn, next_state, next_rng, lookahead - 1, 0);
 		if (score > best_score) {
 			best_score = score;
 			if (move) { *move = i; }
