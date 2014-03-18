@@ -269,14 +269,23 @@ struct Board {
 		return (count_free() == 0 && !has_direct_matches());
 	}
 
-	void place(AnimState &anim) {
+	void place(int count, AnimState &anim) {
+		assert(count > 0);
 		uint8_t free[NUM_TILES];
 		int nfree = count_free(free);
-		if (nfree) {
+		while (count && nfree) {
 			int value = (rng.next_n(10) < 9 ? 1 : 2);
 			int which = rng.next_n(nfree);
+
 			state[free[which]] = value;
 			anim.new_tile(free[which], value);
+
+			// could do this by swapping the last value into free[which],
+			// but that changes the order of slots which means that
+			// place(1); place(1); would behave differently to place(2);
+			for (int i = which + 1; i < nfree; ++i) { free[i-1] = free[i]; }
+			--nfree;
+			--count;
 		}
 	}
 
@@ -336,7 +345,7 @@ struct Board {
 		assert(dir >= 0 && dir < 4);
 		anim.reset();
 		tilt(DIR_DX[dir], DIR_DY[dir], anim);
-		if (anim.tiles_changed()) { place(anim); }
+		if (anim.tiles_changed()) { place(1, anim); }
 	}
 };
 
@@ -384,8 +393,8 @@ struct BoardHistory {
 		return boards[current];
 	}
 
-	void place(AnimState &anim) {
-		push().place(anim);
+	void place(int count, AnimState &anim) {
+		push().place(count, anim);
 	}
 
 	void tilt(int dx, int dy, AnimState &anim) {
@@ -403,20 +412,25 @@ static double s_anim_time0;
 static double s_anim_time1;
 static const double ANIM_TIME = 0.2;
 
+static void new_game() {
+	s_anim.reset();
+	s_history.reset();
+	s_history.place(2, s_anim);
+}
+
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
 		s_anim.reset();
 
 		switch (key) {
 			case GLFW_KEY_ESCAPE: { exit(0); } break;
-			case GLFW_KEY_SPACE:  { s_history.place(s_anim); } break;
 			case GLFW_KEY_RIGHT:  { s_history.move(MOVE_RIGHT, s_anim); } break;
 			case GLFW_KEY_LEFT:   { s_history.move(MOVE_LEFT, s_anim); } break;
 			case GLFW_KEY_DOWN:   { s_history.move(MOVE_DOWN, s_anim); } break;
 			case GLFW_KEY_UP:     { s_history.move(MOVE_UP, s_anim); } break;
 			case GLFW_KEY_Z:      { s_history.undo(); } break;
 			case GLFW_KEY_X:      { s_history.redo(); } break;
-			case GLFW_KEY_R:      { s_history.reset(); } break;
+			case GLFW_KEY_N:      { new_game(); } break;
 		}
 
 		if (s_anim.tiles_changed()) {
@@ -488,7 +502,9 @@ int main(int /*argc*/, char** /*argv*/) {
 
 	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
 
-	s_anim_time0 = s_anim_time1 = glfwGetTime();
+	new_game();
+	s_anim_time0 = glfwGetTime();
+	s_anim_time1 = s_anim_time0 + ANIM_TIME;
 
 	while (!glfwWindowShouldClose(wnd)) {
 		double t = glfwGetTime();
