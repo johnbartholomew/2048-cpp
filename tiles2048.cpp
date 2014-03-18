@@ -877,19 +877,14 @@ int main(int /*argc*/, char** /*argv*/) {
 		glfwSwapBuffers(wnd);
 
 		// if we're not animating then be nice and don't spam the CPU & GPU
-		if (t >= s_anim_time1) {
+		if (t >= s_anim_time1 && !s_autoplay) {
+			glfwWaitEvents();
+		} else {
 			if (s_autoplay) {
 				s_anim.reset();
 				automove(s_history, s_anim);
 				start_anim(ANIM_TIME_AUTOPLAY);
 			}
-
-			if (s_anim_time1 > s_anim_time0) {
-				glfwPollEvents();
-			} else {
-				glfwWaitEvents();
-			}
-		} else {
 			glfwPollEvents();
 		}
 	}
