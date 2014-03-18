@@ -388,7 +388,7 @@ int AnimState::evaluate(float alpha, const Board &board, TileAnimState *tiles) c
 		for (int j = 0; j < 4; ++j) {
 			const uint8_t flags = status[i*TILES_X + j];
 			int value = board.state[i*4+j];
-			if ((flags & TILE_STATIONARY) != TILE_STATIONARY) { continue; }
+			if (flags != TILE_STATIONARY) { continue; }
 			// if (!value) { continue; }
 			TileAnimState &tile = tiles[ntiles++];
 			tile.value = value;
@@ -405,7 +405,7 @@ int AnimState::evaluate(float alpha, const Board &board, TileAnimState *tiles) c
 		const Slide &slide = slides[i];
 		assert(slide.to != slide.from);
 
-		if ((status[slide.to] & TILE_MERGE) == 0 && (motion_alpha == 1.0f)) {
+		if ((status[slide.to] & TILE_MERGE) != 0 && (motion_alpha == 1.0f)) {
 			continue;
 		}
 
@@ -440,7 +440,10 @@ int AnimState::evaluate(float alpha, const Board &board, TileAnimState *tiles) c
 			}
 		}
 	}
+
 #endif
+	assert(ntiles < NUM_TILES*2);
+
 	return ntiles;
 }
 
