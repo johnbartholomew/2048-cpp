@@ -434,75 +434,113 @@ static int ai_eval_board(const Board &board) {
 }
 
 typedef int (*Evaluator)(const Board &board);
-typedef int (*Searcher)(Evaluator eval, const Board &board, const RNG &rng, int depth, int *move);
 
-static int ai_search_cheating(Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *move) {
-	assert(lookahead >= 0);
-	if (move) { *move = -1; }
-	if (lookahead == 0) { return evalfn(board); }
+class Searcher {
+	public:
+		Searcher(): evalfn(0), num_moves(0), best_first_move(-1) {}
 
-	Board next_state;
-	RNG next_rng;
-	int best_score = INT_MIN;
-	for (int i = 0; i < 4; ++i) {
-		next_state = board;
-		next_rng = rng;
-		if (!next_state.move(i, 0, next_rng)) { continue; } // ignore null moves
-		int score = ai_search_cheating(evalfn, next_state, next_rng, lookahead - 1, 0);
-		if (score > best_score) {
-			best_score = score;
-			if (move) { *move = i; }
+		int search(Evaluator evalfn, const Board &board, const RNG &rng, int lookahead) {
+			assert(evalfn);
+			this->evalfn = evalfn;
+			this->num_moves = 0;
+			this->best_first_move = -1;
+			return do_search(board, rng, lookahead, &best_first_move);
 		}
-	}
-	return best_score;
-}
 
-static int ai_search_minimax_real(Evaluator evalfn, const Board &board, int lookahead, int *move) {
-	assert(lookahead >= 0);
-	if (move) { *move = -1; }
-	if (lookahead == 0) { return evalfn(board); }
+		int get_num_moves() const { return num_moves; }
+		int get_best_first_move() const { return best_first_move; }
 
-	int best_score;
-	Board next_state;
-	if (lookahead & 1) {
-		// minimise
-		uint8_t free[NUM_TILES];
-		int nfree = board.count_free(free);
-		best_score = INT_MAX;
-		for (int i = 0; i < nfree; ++i) {
-			for (int value = 1; value < 3; ++value) {
+	protected:
+		int eval_board(const Board &board) { return evalfn(board); }
+		void tally_move() { ++num_moves; }
+
+	private:
+		Evaluator evalfn;
+		int num_moves;
+		int best_first_move;
+
+		virtual int do_search(const Board &board, const RNG &rng, int lookahead, int *move) = 0;
+};
+
+class SearcherCheat : public Searcher {
+	private:
+		int do_search_real(const Board &board, const RNG &rng, int lookahead, int *move) {
+			if (move) { *move = -1; }
+			if (lookahead == 0) { return eval_board(board); }
+
+			Board next_state;
+			RNG next_rng;
+			int best_score = INT_MIN;
+			for (int i = 0; i < 4; ++i) {
 				next_state = board;
-				next_state.state[free[i]] = value;
-				int score = ai_search_minimax_real(evalfn, next_state, lookahead - 1, 0);
-				if (score < best_score) {
+				next_rng = rng;
+				if (!next_state.move(i, 0, next_rng)) { continue; } // ignore null moves
+				tally_move();
+				int score = do_search_real(next_state, next_rng, lookahead - 1, 0);
+				if (score > best_score) {
 					best_score = score;
+					if (move) { *move = i; }
 				}
 			}
+			return best_score;
 		}
-	} else {
-		// maximise
-		best_score = INT_MIN;
-		for (int i = 0; i < 4; ++i) {
-			next_state = board;
-			if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
-			int score = ai_search_minimax_real(evalfn, next_state, lookahead - 1, 0);
-			if (score > best_score) {
-				best_score = score;
-				if (move) { *move = i; }
+
+		virtual int do_search(const Board &board, const RNG &rng, int lookahead, int *move) {
+			assert(lookahead >= 0);
+			return do_search_real(board, rng, lookahead, move);
+		}
+};
+
+class SearcherNaiveMinimax : public Searcher {
+	private:
+		int do_search_real(const Board &board, int lookahead, int *move) {
+			if (move) { *move = -1; }
+			if (lookahead == 0) { return eval_board(board); }
+
+			int best_score;
+			Board next_state;
+			if (lookahead & 1) {
+				// minimise
+				uint8_t free[NUM_TILES];
+				int nfree = board.count_free(free);
+				best_score = INT_MAX;
+				for (int i = 0; i < nfree; ++i) {
+					for (int value = 1; value < 3; ++value) {
+						next_state = board;
+						next_state.state[free[i]] = value;
+						int score = do_search_real(next_state, lookahead - 1, 0);
+						if (score < best_score) {
+							best_score = score;
+						}
+					}
+				}
+			} else {
+				// maximise
+				best_score = INT_MIN;
+				for (int i = 0; i < 4; ++i) {
+					next_state = board;
+					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+					tally_move();
+					int score = do_search_real(next_state, lookahead - 1, 0);
+					if (score > best_score) {
+						best_score = score;
+						if (move) { *move = i; }
+					}
+				}
 			}
+			return best_score;
 		}
-	}
-	return best_score;
-}
 
-static int ai_search_minimax(Evaluator evalfn, const Board &board, const RNG& /*rng*/, int lookahead, int *move) {
-	assert(lookahead >= 0);
-	return ai_search_minimax_real(evalfn, board, lookahead*2, move);
-}
+		virtual int do_search(const Board &board, const RNG& /*rng*/, int lookahead, int *move) {
+			assert(lookahead >= 0);
+			return do_search_real(board, lookahead*2, move);
+		}
+};
 
-static int ai_move(Searcher searchfn, Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *score = 0) {
-	int best_move;
-	int best_score = searchfn(evalfn, board, rng, lookahead, &best_move);
+static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *score = 0) {
+	int best_score = searcher.search(evalfn, board, rng, lookahead);
+	int best_move = searcher.get_best_first_move();
+	printf("tried %d moves!\n", searcher.get_num_moves());
 	if (score) { *score = best_score; }
 	return best_move;
 }
@@ -532,7 +570,8 @@ static void stop_anim() {
 #endif
 
 static void automove(BoardHistory &history, AnimState &anim) {
-	int move = ai_move(&ai_search_minimax, &ai_eval_board, history.get(), history.get_rng(), 3);
+	SearcherNaiveMinimax searcher;
+	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), 3);
 	if (move != -1) {
 		history.move(move, anim);
 	} else {
