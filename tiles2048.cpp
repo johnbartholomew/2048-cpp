@@ -537,6 +537,174 @@ class SearcherNaiveMinimax : public Searcher {
 		}
 };
 
+static uint64_t pack_board_state(const Board &board) {
+	uint64_t k = 0u;
+	assert(NUM_TILES == 16);
+	for (int i = 0; i < NUM_TILES; ++i) {
+		assert(board.state[i] < 16);
+		k = (k << 4) | board.state[i];
+	}
+	return k;
+}
+
+static uint64_t mix64(uint64_t key) {
+	// from: https://gist.github.com/badboy/6267743
+	key = (~key) + (key << 21); // key = (key << 21) - key - 1;
+	key = key ^ (key >> 24);
+	key = key * 265;
+	key = key ^ (key >> 14);
+	key = key * 21;
+	key = key ^ (key >> 28);
+	key = key + (key << 31);
+	return key;
+}
+
+template <typename T>
+struct BoardCache {
+		enum {
+			ENTRY_COUNT = (1 << 15),
+			BUCKET_SIZE = 8,
+			BUCKET_COUNT = ENTRY_COUNT / BUCKET_SIZE,
+			BUCKET_INDEX_MASK = (BUCKET_COUNT - 1)
+		};
+		struct Bucket {
+			uint64_t keys[BUCKET_SIZE];
+			T values[BUCKET_SIZE];
+		};
+	public:
+		BoardCache(): m_buckets(0) {
+			m_buckets = static_cast<Bucket*>(calloc(BUCKET_COUNT, sizeof(Bucket)));
+		}
+
+		~BoardCache() {
+			free(m_buckets);
+		}
+
+		void reset() {
+			memset(m_buckets, 0, BUCKET_COUNT * sizeof(Bucket));
+		}
+
+		const T *get(const Board &board) const {
+			return get(pack_board_state(board));
+		}
+
+		const T *get(const uint64_t k) const {
+			assert(k != 0);
+			const Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
+			for (int i = 0; i < BUCKET_SIZE; ++i) {
+				if (bucket.keys[i] == k) { return &bucket.values[i]; }
+			}
+			return 0;
+		}
+
+		T &getput(const Board &board, const T &initial) {
+			return getput(pack_board_state(board), initial);
+		}
+
+		T &getput(const uint64_t k, const T &initial) {
+			assert(k != 0);
+			Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
+			for (int i = 0; i < BUCKET_SIZE; ++i) {
+				if (bucket.keys[i] == k) { return bucket.values[i]; }
+			}
+			for (int i = BUCKET_SIZE-1; i > 0; --i) {
+				bucket.keys[i] = bucket.keys[i-1];
+				bucket.values[i] = bucket.values[i-1];
+			}
+			bucket.keys[0] = k;
+			bucket.values[0] = initial;
+			return bucket.values[0];
+		}
+
+		void put(const Board &board, const T &value) {
+			put(pack_board_state(board), value);
+		}
+
+		void put(const uint64_t k, const T &value) {
+			assert(k != 0);
+			Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
+			// rotate the entries
+			for (int i = BUCKET_SIZE-1; i > 0; --i) {
+				bucket.keys[i] = bucket.keys[i-1];
+				bucket.values[i] = bucket.values[i-1];
+			}
+			bucket.keys[0] = k;
+			bucket.values[0] = value;
+		}
+
+	private:
+		Bucket *m_buckets;
+};
+
+class SearcherCachingMinimax : public Searcher {
+	private:
+		struct Score { int min_score; int max_score; };
+		static const Score NULL_SCORE;
+		BoardCache<Score> cache;
+
+		int do_search_real(const Board &board, int lookahead, int *move) {
+			if (move) { *move = -1; }
+			if (lookahead == 0) {
+				Score s;
+				s.min_score = NULL_SCORE.min_score;
+				s.max_score = eval_board(board);
+				cache.put(board, s);
+				return s.max_score;
+			}
+
+			Score &cached_score = cache.getput(board, NULL_SCORE);
+
+			int best_score;
+			Board next_state;
+			if (lookahead & 1) {
+				if (cached_score.min_score != NULL_SCORE.min_score) { return cached_score.min_score; }
+
+				// minimise
+				uint8_t free[NUM_TILES];
+				int nfree = board.count_free(free);
+				best_score = INT_MAX;
+				for (int i = 0; i < nfree; ++i) {
+					for (int value = 1; value < 3; ++value) {
+						next_state = board;
+						next_state.state[free[i]] = value;
+						int score = do_search_real(next_state, lookahead - 1, 0);
+						if (score < best_score) {
+							best_score = score;
+						}
+					}
+				}
+
+				cached_score.min_score = best_score;
+			} else {
+				if (cached_score.max_score != NULL_SCORE.max_score) { return cached_score.max_score; }
+
+				// maximise
+				best_score = INT_MIN;
+				for (int i = 0; i < 4; ++i) {
+					next_state = board;
+					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+					tally_move();
+					int score = do_search_real(next_state, lookahead - 1, 0);
+					if (score > best_score) {
+						best_score = score;
+						if (move) { *move = i; }
+					}
+				}
+
+				cached_score.max_score = best_score;
+			}
+			return best_score;
+		}
+
+		virtual int do_search(const Board &board, const RNG& /*rng*/, int lookahead, int *move) {
+			assert(lookahead >= 0);
+			cache.reset();
+			return do_search_real(board, lookahead*2, move);
+		}
+};
+
+const SearcherCachingMinimax::Score SearcherCachingMinimax::NULL_SCORE = { INT_MAX, INT_MIN };
+
 static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *score = 0) {
 	int best_score = searcher.search(evalfn, board, rng, lookahead);
 	int best_move = searcher.get_best_first_move();
@@ -570,8 +738,8 @@ static void stop_anim() {
 #endif
 
 static void automove(BoardHistory &history, AnimState &anim) {
-	SearcherNaiveMinimax searcher;
-	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), 3);
+	SearcherCachingMinimax searcher;
+	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), 4);
 	if (move != -1) {
 		history.move(move, anim);
 	} else {
