@@ -275,6 +275,7 @@ struct Board {
 		while (count && nfree) {
 			int value = (rng.next_n(10) < 9 ? 1 : 2);
 			int which = rng.next_n(nfree);
+			assert(which >= 0 && which < nfree);
 
 			state[free[which]] = value;
 			if (anim) { anim->new_tile(free[which], value); }
@@ -282,7 +283,10 @@ struct Board {
 			// could do this by swapping the last value into free[which],
 			// but that changes the order of slots which means that
 			// place(1); place(1); would behave differently to place(2);
-			for (int i = which + 1; i < nfree; ++i) { free[i-1] = free[i]; }
+			for (int i = which + 1; i < nfree; ++i) {
+				assert(i < NUM_TILES);
+				free[i-1] = free[i];
+			}
 			--nfree;
 			--count;
 		}
