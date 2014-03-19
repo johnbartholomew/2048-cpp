@@ -773,35 +773,38 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 	}
 }
 
+static void tile_verts(int value, float x, float y, float scale) {
+	x += 64.0f; // centre of the tile
+	y += 64.0f; // centre of the tile
+	const float extent = scale * 64.0f;
+	const float u = (value % 4) * 0.25f;
+	const float v = (value / 4) * 0.25f;
+	glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x - extent, y - extent);
+	glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x + extent, y - extent);
+	glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x + extent, y + extent);
+	glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x - extent, y + extent);
+}
+
 static void render_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
+	glColor4ub(255, 255, 255, 255);
+	glBegin(GL_QUADS);
 	for (int i = 0; i < anim.ntiles; ++i) {
 		const TileAnim &tile = anim.tiles[i];
-		float x = tile.x.eval(alpha) + 64.0f;
-		float y = tile.y.eval(alpha) + 64.0f;
-		float extent = tile.scale.eval(alpha) * 64.0f;
-		const float u = (tile.value % 4) * 0.25f;
-		const float v = (tile.value / 4) * 0.25f;
-		glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-		glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x - extent, y - extent);
-		glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x + extent, y - extent);
-		glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x + extent, y + extent);
-		glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x - extent, y + extent);
+		tile_verts(tile.value, tile.x.eval(alpha), tile.y.eval(alpha), tile.scale.eval(alpha));
 	}
+	glEnd();
 }
 
 static void render_static(const Board &board) {
+	glColor4ub(255, 255, 255, 255);
+	glBegin(GL_QUADS);
 	for (int i = 0; i < NUM_TILES; ++i) {
 		const int value = board.state[i];
-		if (value == 0) { continue; }
-		const float x = 128.0f * (i % TILES_X);
-		const float y = 128.0f * (i / TILES_X);
-		const float u = (value % 4) * 0.25f;
-		const float v = (value / 4) * 0.25f;
-		glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x, y);
-		glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x + 128.0f, y);
-		glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x + 128.0f, y + 128.0f);
-		glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x, y + 128.0f);
+		if (value) {
+			tile_verts(value, 128.0f * (i % TILES_X), 128.0f * (i / TILES_X), 1.0f);
+		}
 	}
+	glEnd();
 }
 
 int main(int /*argc*/, char** /*argv*/) {
@@ -865,14 +868,11 @@ int main(int /*argc*/, char** /*argv*/) {
 		glEnd();
 
 		glEnable(GL_TEXTURE_2D);
-		glColor4ub(255, 255, 255, 255);
-		glBegin(GL_QUADS);
 		if (alpha < 1.0) {
 			render_anim(alpha, s_history.get(), s_anim);
 		} else {
 			render_static(s_history.get());
 		}
-		glEnd();
 
 		glfwSwapBuffers(wnd);
 
