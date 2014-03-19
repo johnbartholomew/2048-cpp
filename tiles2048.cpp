@@ -653,7 +653,7 @@ class SearcherAlphaBeta : public Searcher {
 			assert(lookahead >= 0);
 			pruned = 0;
 			int score = do_search_real(board, INT_MIN, INT_MAX, lookahead*2, move);
-			printf("alpha-beta pruned %d\n", pruned);
+			printf("(alpha-beta) alpha-beta pruned %d\n", pruned);
 			return score;
 		}
 };
@@ -723,7 +723,7 @@ class SearcherCachingMinimax : public Searcher {
 			memset(num_cached, 0, sizeof(num_cached));
 			cache.reset();
 			int score = do_search_real(board, lookahead*2, move);
-			printf("cache hits:");
+			printf("(caching-minimax) cache hits:");
 			for (int i = 0; i < imin(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
 			printf("\n");
 			return score;
