@@ -899,12 +899,17 @@ static bool automove(BoardHistory &history, AnimState &anim) {
 	SearcherCachingMinimax searcher_c;
 	SearcherCachingAlphaBeta searcher_d;
 
-	int move_a = ai_move(searcher_a, &ai_eval_board, history.get(), history.get_rng(), lookahead);
-	int move_b = ai_move(searcher_b, &ai_eval_board, history.get(), history.get_rng(), lookahead);
+	const Board &board = history.get();
+	const RNG &rng = history.get_rng();
+	printf("AI move, board state: %016lx rng %08x,%08x,%08x,%08x (lookahead = %d)\n",
+			pack_board_state(board), rng.x, rng.y, rng.z, rng.w, lookahead);
+
+	int move_a = ai_move(searcher_a, &ai_eval_board, board, rng, lookahead);
+	int move_b = ai_move(searcher_b, &ai_eval_board, board, rng, lookahead);
 	assert(move_a == move_b);
-	int move_c = ai_move(searcher_c, &ai_eval_board, history.get(), history.get_rng(), lookahead);
+	int move_c = ai_move(searcher_c, &ai_eval_board, board, rng, lookahead);
 	assert(move_a == move_c);
-	int move_d = ai_move(searcher_d, &ai_eval_board, history.get(), history.get_rng(), lookahead);
+	int move_d = ai_move(searcher_d, &ai_eval_board, board, rng, lookahead);
 	assert(move_a == move_d);
 
 	int move = move_a;
