@@ -609,53 +609,44 @@ class SearcherAlphaBeta : public Searcher {
 	private:
 		int pruned;
 
-		int do_search_real(const Board &board, int alpha, int beta, int lookahead, int *move) {
-			if (move) { *move = -1; }
-			if (lookahead == 0) { return eval_board(board); }
-
-			// final score must be *at least* alpha and *at most* beta
-			// alpha <= score <= beta
-
-			int best_score;
+		int do_search_mini(const Board &board, int alpha, int beta, int lookahead) {
 			Board next_state;
-			if (lookahead & 1) {
-				// minimise
-				uint8_t free[NUM_TILES];
-				int nfree = board.count_free(free);
-				best_score = beta;
-				for (int i = 0; i < nfree; ++i) {
-					for (int value = 1; value < 3; ++value) {
-						next_state = board;
-						next_state.state[free[i]] = value;
-						int score = do_search_real(next_state, alpha, best_score, lookahead - 1, 0);
-						if (score < best_score) {
-							best_score = score;
-							if (best_score < alpha) { ++pruned; return INT_MIN; }
-						}
-					}
-				}
-			} else {
-				// maximise
-				best_score = alpha;
-				for (int i = 0; i < 4; ++i) {
+			uint8_t free[NUM_TILES];
+			int nfree = board.count_free(free);
+			for (int i = 0; i < nfree; ++i) {
+				for (int value = 1; value < 3; ++value) {
 					next_state = board;
-					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
-					tally_move();
-					int score = do_search_real(next_state, best_score, beta, lookahead - 1, 0);
-					if (score > best_score) {
-						best_score = score;
-						if (best_score > beta) { ++pruned; return INT_MAX; }
-						if (move) { *move = i; }
-					}
+					next_state.state[free[i]] = value;
+					beta = imin(beta, do_search_maxi(next_state, alpha, beta, lookahead - 1, 0));
+					if (alpha >= beta) { ++pruned; return beta; }
 				}
 			}
-			return best_score;
+			return beta;
+		}
+
+		int do_search_maxi(const Board &board, int alpha, int beta, int lookahead, int *move) {
+			if (move) { *move = -1; }
+			if (lookahead == 0) { return eval_board(board); }
+			// final score must be *at least* alpha and *at most* beta
+			// alpha <= score <= beta
+			Board next_state;
+			for (int i = 0; i < 4; ++i) {
+				next_state = board;
+				if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+				int score = do_search_mini(next_state, alpha, beta, lookahead - 1);
+				if (score > alpha) {
+					alpha = score;
+					if (move) { *move = i; }
+				}
+				if (alpha >= beta) { ++pruned; return alpha; }
+			}
+			return alpha;
 		}
 
 		virtual int do_search(const Board &board, const RNG& /*rng*/, int lookahead, int *move) {
 			assert(lookahead >= 0);
 			pruned = 0;
-			int score = do_search_real(board, INT_MIN, INT_MAX, lookahead*2, move);
+			int score = do_search_maxi(board, INT_MIN, INT_MAX, lookahead*2, move);
 			printf("(alpha-beta) alpha-beta pruned %d\n", pruned);
 			return score;
 		}
