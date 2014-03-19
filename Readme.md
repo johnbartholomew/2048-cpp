@@ -2,11 +2,8 @@ Overview
 --------
 
 This is a C++ implementation of the '2048' game.
-It is primarily inspired by this HTML + Javascript version
+It is primarily inspired by this [HTML + Javascript version](https://github.com/gabrielecirulli/2048)
 by Gabriele Cirulli:
-
-    https://github.com/gabrielecirulli/2048
-    (play it: http://gabrielecirulli.github.io/2048/ )
 
 Key controls:
 
