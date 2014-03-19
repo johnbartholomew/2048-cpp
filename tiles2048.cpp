@@ -607,7 +607,7 @@ static int imax(int a, int b) { return (a > b ? a : b); }
 
 class SearcherAlphaBeta : public Searcher {
 	private:
-		int pruned;
+		int num_pruned;
 
 		int do_search_mini(const Board &board, int alpha, int beta, int lookahead) {
 			Board next_state;
@@ -618,7 +618,7 @@ class SearcherAlphaBeta : public Searcher {
 					next_state = board;
 					next_state.state[free[i]] = value;
 					beta = imin(beta, do_search_maxi(next_state, alpha, beta, lookahead - 1, 0));
-					if (alpha >= beta) { ++pruned; return beta; }
+					if (alpha >= beta) { ++num_pruned; return beta; }
 				}
 			}
 			return beta;
@@ -638,16 +638,16 @@ class SearcherAlphaBeta : public Searcher {
 					alpha = score;
 					if (move) { *move = i; }
 				}
-				if (alpha >= beta) { ++pruned; return alpha; }
+				if (alpha >= beta) { ++num_pruned; return alpha; }
 			}
 			return alpha;
 		}
 
 		virtual int do_search(const Board &board, const RNG& /*rng*/, int lookahead, int *move) {
 			assert(lookahead >= 0);
-			pruned = 0;
+			num_pruned = 0;
 			int score = do_search_maxi(board, INT_MIN, INT_MAX, lookahead*2, move);
-			printf("(alpha-beta) alpha-beta pruned %d\n", pruned);
+			printf("(alpha-beta) alpha-beta pruned %d\n", num_pruned);
 			return score;
 		}
 };
