@@ -36,10 +36,14 @@ Like any project, this one has an effectively infinite to-do list. Starting with
 * Iterative Deepening Depth First Search (with caching)
 * Retaining cache state between moves during autoplay
 * Game over message
-* Game WIN message
+* Game WIN message (with a button to continue playing after you hit it)
+* Seed the RNG properly (but let the seed be controlled by a command line switch)
+* Game scoring
+* No-GUI autoplay mode for trialling variations to the AI
 
 Beyond this point I will most likely have got bored and moved onto other projects:
 
+* Actually multi-threaded search (ie, split a single search over multiple cores)
 * Alternative basic search/AI algorithms (e.g., maximise *expected* board score rather than assuming antagonistic placement of new tiles?)
 * A man-page
 * On-screen help (showing keyboard controls)
