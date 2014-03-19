@@ -689,72 +689,74 @@ class SearcherAlphaBeta : public Searcher {
 
 class SearcherCachingMinimax : public Searcher {
 	private:
-		struct Score { int min_score; int max_score; };
-		static const Score NULL_SCORE;
-		BoardCache<Score> cache;
+		struct Info { static const Info NIL; int score; int lookahead; };
+		BoardCache<Info> cache;
+		int num_cached[10];
 
 		int do_search_real(const Board &board, int lookahead, int *move) {
 			if (move) { *move = -1; }
-			if (lookahead == 0) {
-				Score s;
-				s.min_score = NULL_SCORE.min_score;
-				s.max_score = eval_board(board);
-				cache.put(board, s);
-				return s.max_score;
+
+			Info &cached_score = cache.getput(board, Info::NIL);
+			if (cached_score.lookahead == lookahead) {
+				++num_cached[(lookahead < 10 ? lookahead : 9)];
+				return cached_score.score;
 			}
 
-			Score &cached_score = cache.getput(board, NULL_SCORE);
-
 			int best_score;
-			Board next_state;
-			if (lookahead & 1) {
-				if (cached_score.min_score != NULL_SCORE.min_score) { return cached_score.min_score; }
 
-				// minimise
-				uint8_t free[NUM_TILES];
-				int nfree = board.count_free(free);
-				best_score = INT_MAX;
-				for (int i = 0; i < nfree; ++i) {
-					for (int value = 1; value < 3; ++value) {
+			if (lookahead == 0) {
+				best_score = eval_board(board);
+			} else {
+				Board next_state;
+				if (lookahead & 1) {
+					// minimise
+					uint8_t free[NUM_TILES];
+					int nfree = board.count_free(free);
+					best_score = INT_MAX;
+					for (int i = 0; i < nfree; ++i) {
+						for (int value = 1; value < 3; ++value) {
+							next_state = board;
+							next_state.state[free[i]] = value;
+							int score = do_search_real(next_state, lookahead - 1, 0);
+							if (score < best_score) {
+								best_score = score;
+							}
+						}
+					}
+				} else {
+					// maximise
+					best_score = INT_MIN;
+					for (int i = 0; i < 4; ++i) {
 						next_state = board;
-						next_state.state[free[i]] = value;
+						if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+						tally_move();
 						int score = do_search_real(next_state, lookahead - 1, 0);
-						if (score < best_score) {
+						if (score > best_score) {
 							best_score = score;
+							if (move) { *move = i; }
 						}
 					}
 				}
-
-				cached_score.min_score = best_score;
-			} else {
-				if (cached_score.max_score != NULL_SCORE.max_score) { return cached_score.max_score; }
-
-				// maximise
-				best_score = INT_MIN;
-				for (int i = 0; i < 4; ++i) {
-					next_state = board;
-					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
-					tally_move();
-					int score = do_search_real(next_state, lookahead - 1, 0);
-					if (score > best_score) {
-						best_score = score;
-						if (move) { *move = i; }
-					}
-				}
-
-				cached_score.max_score = best_score;
 			}
+
+			cached_score.lookahead = lookahead;
+			cached_score.score = best_score;
 			return best_score;
 		}
 
 		virtual int do_search(const Board &board, const RNG& /*rng*/, int lookahead, int *move) {
 			assert(lookahead >= 0);
+			memset(num_cached, 0, sizeof(num_cached));
 			cache.reset();
-			return do_search_real(board, lookahead*2, move);
+			int score = do_search_real(board, lookahead*2, move);
+			printf("cache hits:");
+			for (int i = 0; i < 10; ++i) { printf(" %d", num_cached[i]); }
+			printf("\n");
+			return score;
 		}
 };
 
-const SearcherCachingMinimax::Score SearcherCachingMinimax::NULL_SCORE = { INT_MAX, INT_MIN };
+const SearcherCachingMinimax::Info SearcherCachingMinimax::Info::NIL = { INT_MIN, -1 };
 
 static int monotonicity(const uint8_t *begin, int stride, int n) {
 	int total = (n - 2);
