@@ -657,12 +657,16 @@ class SearcherCachingMinimax : public Searcher {
 		enum { STAT_DEPTH = 20 };
 		int num_cached[STAT_DEPTH];
 
+		void tally_cache_hit(int lookahead) {
+			++num_cached[imin(lookahead, STAT_DEPTH - 1)];
+		}
+
 		int do_search_real(const Board &board, int lookahead, int *move) {
 			if (move) { *move = -1; }
 
 			Info &cached_score = cache.getput(board, Info::NIL);
 			if (cached_score.lookahead == lookahead) {
-				++num_cached[imin(lookahead, STAT_DEPTH-1)];
+				tally_cache_hit(lookahead);
 				return cached_score.score;
 			}
 
