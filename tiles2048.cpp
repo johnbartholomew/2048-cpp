@@ -428,45 +428,104 @@ struct BoardHistory {
 	}
 };
 
-static int monotonicity(const uint8_t *begin, int stride, int n) {
-	int total = (n - 2);
-	int i;
-	for (i = 0; (*begin == 0) && i < n; ++i) { begin += stride; }
-	int last_value = *begin, last_sign = 0;
-	for (; i < n; ++i) {
-		if (*begin) {
-			int delta = (*begin - last_value);
-			int sign = (0 < delta) - (delta < 0);
-			if (sign) {
-				if (last_sign && last_sign != sign) { --total; }
-				last_sign = sign;
-			}
-			last_value = *begin;
+static uint64_t pack_board_state(const Board &board) {
+	uint64_t k = 0u;
+	assert(NUM_TILES == 16);
+	for (int i = 0; i < NUM_TILES; ++i) {
+		assert(board.state[i] < 16);
+		k = (k << 4) | board.state[i];
+	}
+	return k;
+}
+
+static uint64_t mix64(uint64_t key) {
+	// from: https://gist.github.com/badboy/6267743
+	key = (~key) + (key << 21); // key = (key << 21) - key - 1;
+	key = key ^ (key >> 24);
+	key = key * 265;
+	key = key ^ (key >> 14);
+	key = key * 21;
+	key = key ^ (key >> 28);
+	key = key + (key << 31);
+	return key;
+}
+
+template <typename T>
+struct BoardCache {
+		enum {
+			ENTRY_COUNT = (1 << 15),
+			BUCKET_SIZE = 8,
+			BUCKET_COUNT = ENTRY_COUNT / BUCKET_SIZE,
+			BUCKET_INDEX_MASK = (BUCKET_COUNT - 1)
+		};
+		struct Bucket {
+			uint64_t keys[BUCKET_SIZE];
+			T values[BUCKET_SIZE];
+		};
+	public:
+		BoardCache(): m_buckets(0) {
+			m_buckets = static_cast<Bucket*>(calloc(BUCKET_COUNT, sizeof(Bucket)));
 		}
-		begin += stride;
-	}
-	return total;
-}
 
-static int ai_score_monotonicity(const Board &board) {
-	int total = 0;
-	// monotonicity of rows
-	for (int i = 0; i < TILES_Y; ++i) {
-		total += monotonicity(&board.state[i*TILES_X], 1, TILES_X);
-	}
-	// monotonicity of columns
-	for (int j = 0; j < TILES_Y; ++j) {
-		total += monotonicity(&board.state[j], TILES_X, TILES_Y);
-	}
-	return total;
-}
+		~BoardCache() {
+			free(m_buckets);
+		}
 
-static int ai_eval_board(const Board &board) {
-	// try to maximise monotonicity
-	return ai_score_monotonicity(board);
-	// try to maximise free space
-	//return board.count_free();
-}
+		void reset() {
+			memset(m_buckets, 0, BUCKET_COUNT * sizeof(Bucket));
+		}
+
+		const T *get(const Board &board) const {
+			return get(pack_board_state(board));
+		}
+
+		const T *get(const uint64_t k) const {
+			assert(k != 0);
+			const Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
+			for (int i = 0; i < BUCKET_SIZE; ++i) {
+				if (bucket.keys[i] == k) { return &bucket.values[i]; }
+			}
+			return 0;
+		}
+
+		T &getput(const Board &board, const T &initial) {
+			return getput(pack_board_state(board), initial);
+		}
+
+		T &getput(const uint64_t k, const T &initial) {
+			assert(k != 0);
+			Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
+			for (int i = 0; i < BUCKET_SIZE; ++i) {
+				if (bucket.keys[i] == k) { return bucket.values[i]; }
+			}
+			for (int i = BUCKET_SIZE-1; i > 0; --i) {
+				bucket.keys[i] = bucket.keys[i-1];
+				bucket.values[i] = bucket.values[i-1];
+			}
+			bucket.keys[0] = k;
+			bucket.values[0] = initial;
+			return bucket.values[0];
+		}
+
+		void put(const Board &board, const T &value) {
+			put(pack_board_state(board), value);
+		}
+
+		void put(const uint64_t k, const T &value) {
+			assert(k != 0);
+			Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
+			// rotate the entries
+			for (int i = BUCKET_SIZE-1; i > 0; --i) {
+				bucket.keys[i] = bucket.keys[i-1];
+				bucket.values[i] = bucket.values[i-1];
+			}
+			bucket.keys[0] = k;
+			bucket.values[0] = value;
+		}
+
+	private:
+		Bucket *m_buckets;
+};
 
 typedef int (*Evaluator)(const Board &board);
 
@@ -628,105 +687,6 @@ class SearcherAlphaBeta : public Searcher {
 		}
 };
 
-static uint64_t pack_board_state(const Board &board) {
-	uint64_t k = 0u;
-	assert(NUM_TILES == 16);
-	for (int i = 0; i < NUM_TILES; ++i) {
-		assert(board.state[i] < 16);
-		k = (k << 4) | board.state[i];
-	}
-	return k;
-}
-
-static uint64_t mix64(uint64_t key) {
-	// from: https://gist.github.com/badboy/6267743
-	key = (~key) + (key << 21); // key = (key << 21) - key - 1;
-	key = key ^ (key >> 24);
-	key = key * 265;
-	key = key ^ (key >> 14);
-	key = key * 21;
-	key = key ^ (key >> 28);
-	key = key + (key << 31);
-	return key;
-}
-
-template <typename T>
-struct BoardCache {
-		enum {
-			ENTRY_COUNT = (1 << 15),
-			BUCKET_SIZE = 8,
-			BUCKET_COUNT = ENTRY_COUNT / BUCKET_SIZE,
-			BUCKET_INDEX_MASK = (BUCKET_COUNT - 1)
-		};
-		struct Bucket {
-			uint64_t keys[BUCKET_SIZE];
-			T values[BUCKET_SIZE];
-		};
-	public:
-		BoardCache(): m_buckets(0) {
-			m_buckets = static_cast<Bucket*>(calloc(BUCKET_COUNT, sizeof(Bucket)));
-		}
-
-		~BoardCache() {
-			free(m_buckets);
-		}
-
-		void reset() {
-			memset(m_buckets, 0, BUCKET_COUNT * sizeof(Bucket));
-		}
-
-		const T *get(const Board &board) const {
-			return get(pack_board_state(board));
-		}
-
-		const T *get(const uint64_t k) const {
-			assert(k != 0);
-			const Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
-			for (int i = 0; i < BUCKET_SIZE; ++i) {
-				if (bucket.keys[i] == k) { return &bucket.values[i]; }
-			}
-			return 0;
-		}
-
-		T &getput(const Board &board, const T &initial) {
-			return getput(pack_board_state(board), initial);
-		}
-
-		T &getput(const uint64_t k, const T &initial) {
-			assert(k != 0);
-			Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
-			for (int i = 0; i < BUCKET_SIZE; ++i) {
-				if (bucket.keys[i] == k) { return bucket.values[i]; }
-			}
-			for (int i = BUCKET_SIZE-1; i > 0; --i) {
-				bucket.keys[i] = bucket.keys[i-1];
-				bucket.values[i] = bucket.values[i-1];
-			}
-			bucket.keys[0] = k;
-			bucket.values[0] = initial;
-			return bucket.values[0];
-		}
-
-		void put(const Board &board, const T &value) {
-			put(pack_board_state(board), value);
-		}
-
-		void put(const uint64_t k, const T &value) {
-			assert(k != 0);
-			Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
-			// rotate the entries
-			for (int i = BUCKET_SIZE-1; i > 0; --i) {
-				bucket.keys[i] = bucket.keys[i-1];
-				bucket.values[i] = bucket.values[i-1];
-			}
-			bucket.keys[0] = k;
-			bucket.values[0] = value;
-		}
-
-	private:
-		Bucket *m_buckets;
-};
-
 class SearcherCachingMinimax : public Searcher {
 	private:
 		struct Score { int min_score; int max_score; };
@@ -795,6 +755,46 @@ class SearcherCachingMinimax : public Searcher {
 };
 
 const SearcherCachingMinimax::Score SearcherCachingMinimax::NULL_SCORE = { INT_MAX, INT_MIN };
+
+static int monotonicity(const uint8_t *begin, int stride, int n) {
+	int total = (n - 2);
+	int i;
+	for (i = 0; (*begin == 0) && i < n; ++i) { begin += stride; }
+	int last_value = *begin, last_sign = 0;
+	for (; i < n; ++i) {
+		if (*begin) {
+			int delta = (*begin - last_value);
+			int sign = (0 < delta) - (delta < 0);
+			if (sign) {
+				if (last_sign && last_sign != sign) { --total; }
+				last_sign = sign;
+			}
+			last_value = *begin;
+		}
+		begin += stride;
+	}
+	return total;
+}
+
+static int ai_score_monotonicity(const Board &board) {
+	int total = 0;
+	// monotonicity of rows
+	for (int i = 0; i < TILES_Y; ++i) {
+		total += monotonicity(&board.state[i*TILES_X], 1, TILES_X);
+	}
+	// monotonicity of columns
+	for (int j = 0; j < TILES_Y; ++j) {
+		total += monotonicity(&board.state[j], TILES_X, TILES_Y);
+	}
+	return total;
+}
+
+static int ai_eval_board(const Board &board) {
+	// try to maximise monotonicity
+	return ai_score_monotonicity(board);
+	// try to maximise free space
+	//return board.count_free();
+}
 
 static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *score = 0) {
 	int best_score = searcher.search(evalfn, board, rng, lookahead);
