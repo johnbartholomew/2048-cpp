@@ -732,6 +732,112 @@ class SearcherCachingMinimax : public Searcher {
 
 const SearcherCachingMinimax::Info SearcherCachingMinimax::Info::NIL = { -1, INT_MIN };
 
+class SearcherCachingAlphaBeta : public Searcher {
+	private:
+		struct Info { static const Info NIL; int lookahead; int alpha; int beta; };
+		BoardCache<Info> cache;
+		enum { STAT_DEPTH = 20 };
+		int num_cached[STAT_DEPTH];
+		int num_pruned;
+
+		int do_search_real(const Board &board, int alpha, int beta, int lookahead, int *move) {
+			if (move) { *move = -1; }
+
+			// final score must be *at least* alpha and *at most* beta
+			// alpha <= score <= beta
+
+			Info &cached_score = cache.getput(board, Info::NIL);
+
+			int best_score;
+			if (lookahead == 0) {
+				if (cached_score.lookahead == lookahead) {
+					if (cached_score.alpha == cached_score.beta) {
+						++num_cached[imin(lookahead, STAT_DEPTH-1)];
+						return cached_score.alpha;
+					}
+				}
+				alpha = beta = best_score = eval_board(board);
+			} else {
+				Board next_state;
+				if (lookahead & 1) {
+					// minimise
+					if (cached_score.lookahead == lookahead) {
+						if (cached_score.beta < alpha) {
+							++num_cached[imin(lookahead, STAT_DEPTH-1)];
+							return cached_score.beta;
+						}
+					}
+					uint8_t free[NUM_TILES];
+					int nfree = board.count_free(free);
+					best_score = beta;
+					for (int i = 0; i < nfree; ++i) {
+						for (int value = 1; value < 3; ++value) {
+							next_state = board;
+							next_state.state[free[i]] = value;
+							int score = do_search_real(next_state, alpha, best_score, lookahead - 1, 0);
+							if (score < best_score) {
+								best_score = score;
+								if (best_score < alpha) {
+									++num_pruned;
+									best_score = INT_MIN;
+									goto prune_mini;
+								}
+							}
+						}
+					}
+prune_mini:
+					beta = best_score;
+				} else {
+					// maximise
+					if (cached_score.lookahead == lookahead) {
+						if (cached_score.alpha > beta) {
+							++num_cached[imin(lookahead, STAT_DEPTH-1)];
+							return cached_score.alpha;
+						}
+					}
+					best_score = alpha;
+					for (int i = 0; i < 4; ++i) {
+						next_state = board;
+						if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+						tally_move();
+						int score = do_search_real(next_state, best_score, beta, lookahead - 1, 0);
+						if (score > best_score) {
+							best_score = score;
+							if (best_score > beta) {
+								++num_pruned;
+								best_score = INT_MAX;
+								goto prune_maxi;
+							}
+							if (move) { *move = i; }
+						}
+					}
+prune_maxi:
+					alpha = best_score;
+				}
+			}
+
+			cached_score.lookahead = lookahead;
+			cached_score.alpha = alpha;
+			cached_score.beta = beta;
+			return best_score;
+		}
+
+		virtual int do_search(const Board &board, const RNG& /*rng*/, int lookahead, int *move) {
+			assert(lookahead >= 0);
+			memset(num_cached, 0, sizeof(num_cached));
+			num_pruned = 0;
+			cache.reset();
+			int score = do_search_real(board, INT_MIN, INT_MAX, lookahead*2, move);
+			printf("(caching-alpha-beta) alpha-beta pruned %d\n", num_pruned);
+			printf("(caching-alpha-beta) cache hits:");
+			for (int i = 0; i < imin(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
+			printf("\n");
+			return score;
+		}
+};
+
+const SearcherCachingAlphaBeta::Info SearcherCachingAlphaBeta::Info::NIL = { -1, INT_MIN, INT_MAX };
+
 static int monotonicity(const uint8_t *begin, int stride, int n) {
 	int total = (n - 2);
 	int i;
@@ -787,12 +893,15 @@ static bool automove(BoardHistory &history, AnimState &anim) {
 	SearcherNaiveMinimax searcher_a;
 	SearcherAlphaBeta searcher_b;
 	SearcherCachingMinimax searcher_c;
+	SearcherCachingAlphaBeta searcher_d;
 
 	int move_a = ai_move(searcher_a, &ai_eval_board, history.get(), history.get_rng(), lookahead);
 	int move_b = ai_move(searcher_b, &ai_eval_board, history.get(), history.get_rng(), lookahead);
 	assert(move_a == move_b);
 	int move_c = ai_move(searcher_c, &ai_eval_board, history.get(), history.get_rng(), lookahead);
 	assert(move_a == move_c);
+	int move_d = ai_move(searcher_d, &ai_eval_board, history.get(), history.get_rng(), lookahead);
+	assert(move_a == move_d);
 
 	int move = move_a;
 	if (move != -1) {
