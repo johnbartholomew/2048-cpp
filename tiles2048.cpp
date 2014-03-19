@@ -778,11 +778,20 @@ static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, con
 }
 
 static bool automove(BoardHistory &history, AnimState &anim) {
+	const int lookahead = 3;
+
 	//SearcherCheat searcher;
-	//SearcherNaiveMinimax searcher;
-	//SearcherCachingMinimax searcher;
-	SearcherAlphaBeta searcher;
-	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), 3);
+	SearcherNaiveMinimax searcher_a;
+	SearcherAlphaBeta searcher_b;
+	SearcherCachingMinimax searcher_c;
+
+	int move_a = ai_move(searcher_a, &ai_eval_board, history.get(), history.get_rng(), lookahead);
+	int move_b = ai_move(searcher_b, &ai_eval_board, history.get(), history.get_rng(), lookahead);
+	assert(move_a == move_b);
+	int move_c = ai_move(searcher_c, &ai_eval_board, history.get(), history.get_rng(), lookahead);
+	assert(move_a == move_c);
+
+	int move = move_a;
 	if (move != -1) {
 		history.move(move, anim);
 		return true;
