@@ -777,6 +777,22 @@ static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, con
 	return best_move;
 }
 
+static bool automove(BoardHistory &history, AnimState &anim) {
+	//SearcherCheat searcher;
+	//SearcherNaiveMinimax searcher;
+	//SearcherCachingMinimax searcher;
+	SearcherAlphaBeta searcher;
+	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), 3);
+	if (move != -1) {
+		history.move(move, anim);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+// -------- GLOBAL STATE -----------------------------------------------------------------------
+
 static BoardHistory s_history;
 static AnimState s_anim;
 static double s_anim_time0;
@@ -801,19 +817,6 @@ static void stop_anim() {
 }
 #endif
 
-static void automove(BoardHistory &history, AnimState &anim) {
-	//SearcherCheat searcher;
-	//SearcherNaiveMinimax searcher;
-	//SearcherCachingMinimax searcher;
-	SearcherAlphaBeta searcher;
-	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), 3);
-	if (move != -1) {
-		history.move(move, anim);
-	} else {
-		s_autoplay = false;
-	}
-}
-
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
 		if (key == GLFW_KEY_ESCAPE) {
@@ -832,7 +835,7 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 					case GLFW_KEY_X:     { s_history.redo(); } break;
 					case GLFW_KEY_N:     { s_history.new_game(s_anim); } break;
 					case GLFW_KEY_H:     { automove(s_history, s_anim); } break;
-					case GLFW_KEY_P:     { s_autoplay = true; automove(s_history, s_anim); } break;
+					case GLFW_KEY_P:     { s_autoplay = automove(s_history, s_anim); } break;
 				}
 				start_anim(s_autoplay ? ANIM_TIME_AUTOPLAY : ANIM_TIME_NORMAL);
 			}
@@ -950,7 +953,7 @@ int main(int /*argc*/, char** /*argv*/) {
 		if (anim_done) {
 			if (s_autoplay) {
 				s_anim.reset();
-				automove(s_history, s_anim);
+				s_autoplay = automove(s_history, s_anim);
 				start_anim(ANIM_TIME_AUTOPLAY);
 				glfwPollEvents();
 			} else {
