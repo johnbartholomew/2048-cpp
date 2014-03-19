@@ -641,6 +641,7 @@ class SearcherAlphaBeta : public Searcher {
 			for (int i = 0; i < 4; ++i) {
 				next_state = board;
 				if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+				tally_move();
 				int score = do_search_mini(next_state, alpha, beta, lookahead - 1);
 				if (score > alpha) {
 					alpha = score;
