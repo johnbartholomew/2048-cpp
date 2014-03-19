@@ -658,18 +658,21 @@ class SearcherAlphaBeta : public Searcher {
 		}
 };
 
+static int imin(int a, int b) { return (a < b ? a : b); }
+
 class SearcherCachingMinimax : public Searcher {
 	private:
 		struct Info { static const Info NIL; int lookahead; int score; };
 		BoardCache<Info> cache;
-		int num_cached[10];
+		enum { STAT_DEPTH = 20 };
+		int num_cached[STAT_DEPTH];
 
 		int do_search_real(const Board &board, int lookahead, int *move) {
 			if (move) { *move = -1; }
 
 			Info &cached_score = cache.getput(board, Info::NIL);
 			if (cached_score.lookahead == lookahead) {
-				++num_cached[(lookahead < 10 ? lookahead : 9)];
+				++num_cached[imin(lookahead, STAT_DEPTH-1)];
 				return cached_score.score;
 			}
 
@@ -721,7 +724,7 @@ class SearcherCachingMinimax : public Searcher {
 			cache.reset();
 			int score = do_search_real(board, lookahead*2, move);
 			printf("cache hits:");
-			for (int i = 0; i < 10; ++i) { printf(" %d", num_cached[i]); }
+			for (int i = 0; i < imin(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
 			printf("\n");
 			return score;
 		}
