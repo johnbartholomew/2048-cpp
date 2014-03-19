@@ -461,7 +461,7 @@ static uint64_t mix64(uint64_t key) {
 }
 
 template <typename T>
-struct BoardCache {
+class BoardCache {
 		enum {
 			ENTRY_COUNT = (1 << 15),
 			BUCKET_SIZE = 8,
