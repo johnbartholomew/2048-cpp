@@ -801,7 +801,9 @@ static void render_static(const Board &board) {
 	for (int i = 0; i < NUM_TILES; ++i) {
 		const int value = board.state[i];
 		if (value) {
-			tile_verts(value, 128.0f * (i % TILES_X), 128.0f * (i / TILES_X), 1.0f);
+			float x, y;
+			tile_idx_to_xy(i, &x, &y);
+			tile_verts(value, x, y, 1.0f);
 		}
 	}
 	glEnd();
