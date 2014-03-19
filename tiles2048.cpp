@@ -660,7 +660,7 @@ class SearcherAlphaBeta : public Searcher {
 
 class SearcherCachingMinimax : public Searcher {
 	private:
-		struct Info { static const Info NIL; int score; int lookahead; };
+		struct Info { static const Info NIL; int lookahead; int score; };
 		BoardCache<Info> cache;
 		int num_cached[10];
 
@@ -727,7 +727,7 @@ class SearcherCachingMinimax : public Searcher {
 		}
 };
 
-const SearcherCachingMinimax::Info SearcherCachingMinimax::Info::NIL = { INT_MIN, -1 };
+const SearcherCachingMinimax::Info SearcherCachingMinimax::Info::NIL = { -1, INT_MIN };
 
 static int monotonicity(const uint8_t *begin, int stride, int n) {
 	int total = (n - 2);
