@@ -738,92 +738,91 @@ const SearcherCachingMinimax::Info SearcherCachingMinimax::Info::NIL = { -1, INT
 
 class SearcherCachingAlphaBeta : public Searcher {
 	private:
-		struct Info { static const Info NIL; int lookahead; int alpha; int beta; };
+		enum { SCORE_UNKNOWN, SCORE_EXACT, SCORE_LOWER_BOUND, SCORE_UPPER_BOUND };
+		struct Info { static const Info NIL; int16_t lookahead; int16_t type; int score; };
 		BoardCache<Info> cache;
 		enum { STAT_DEPTH = 20 };
 		int num_cached[STAT_DEPTH];
 		int num_pruned;
 
-		int do_search_real(const Board &board, int alpha, int beta, int lookahead, int *move) {
-			if (move) { *move = -1; }
+		void tally_cache_hit(int lookahead) {
+			++num_cached[imin(lookahead, STAT_DEPTH - 1)];
+		}
 
-			// final score must be *at least* alpha and *at most* beta
-			// alpha <= score <= beta
-
-			Info &cached_score = cache.getput(board, Info::NIL);
-
-			int best_score;
-			if (lookahead == 0) {
-				if (cached_score.lookahead == lookahead) {
-					if (cached_score.alpha == cached_score.beta) {
-						++num_cached[imin(lookahead, STAT_DEPTH-1)];
-						return cached_score.alpha;
-					}
-				}
-				alpha = beta = best_score = eval_board(board);
-			} else {
-				Board next_state;
-				if (lookahead & 1) {
-					// minimise
-					if (cached_score.lookahead == lookahead) {
-						if (cached_score.beta < alpha) {
-							++num_cached[imin(lookahead, STAT_DEPTH-1)];
-							return cached_score.beta;
-						}
-					}
-					uint8_t free[NUM_TILES];
-					int nfree = board.count_free(free);
-					best_score = beta;
-					for (int i = 0; i < nfree; ++i) {
-						for (int value = 1; value < 3; ++value) {
-							next_state = board;
-							next_state.state[free[i]] = value;
-							int score = do_search_real(next_state, alpha, best_score, lookahead - 1, 0);
-							if (score < best_score) {
-								best_score = score;
-								if (best_score < alpha) {
-									++num_pruned;
-									best_score = INT_MIN;
-									goto prune_mini;
-								}
-							}
-						}
-					}
-prune_mini:
-					beta = best_score;
-				} else {
-					// maximise
-					if (cached_score.lookahead == lookahead) {
-						if (cached_score.alpha > beta) {
-							++num_cached[imin(lookahead, STAT_DEPTH-1)];
-							return cached_score.alpha;
-						}
-					}
-					best_score = alpha;
-					for (int i = 0; i < 4; ++i) {
-						next_state = board;
-						if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
-						tally_move();
-						int score = do_search_real(next_state, best_score, beta, lookahead - 1, 0);
-						if (score > best_score) {
-							best_score = score;
-							if (best_score > beta) {
-								++num_pruned;
-								best_score = INT_MAX;
-								goto prune_maxi;
-							}
-							if (move) { *move = i; }
-						}
-					}
-prune_maxi:
-					alpha = best_score;
+		bool check_cached(const Info &cached_score, int alpha, int beta, int lookahead) {
+			bool cache_valid = false;
+			if (cached_score.lookahead == lookahead) {
+				switch (cached_score.type) {
+					case SCORE_EXACT: cache_valid = true; break;
+					case SCORE_UPPER_BOUND: cache_valid = (cached_score.score <= alpha); break;
+					case SCORE_LOWER_BOUND: cache_valid = (cached_score.score >= beta); break;
 				}
 			}
+			if (cache_valid) { tally_cache_hit(lookahead); }
+			return cache_valid;
+		}
 
+		int do_search_mini(const Board &board, int alpha, int beta, int lookahead) {
+			assert(alpha < beta);
+			Info &cached_score = cache.getput(board, Info::NIL);
+			if (check_cached(cached_score, alpha, beta, lookahead)) { return cached_score.score; }
 			cached_score.lookahead = lookahead;
-			cached_score.alpha = alpha;
-			cached_score.beta = beta;
-			return best_score;
+			cached_score.type = SCORE_LOWER_BOUND;
+			Board next_state;
+			for (int i = 0; i < NUM_TILES; ++i) {
+				if (board.state[i]) { continue; } // can only place tiles in empty cells
+				for (int value = 1; value < 3; ++value) {
+					next_state = board;
+					next_state.state[i] = value;
+					int score = do_search_maxi(next_state, alpha, beta, lookahead - 1, 0);
+					if (score < beta) {
+						beta = score;
+						cached_score.type = SCORE_EXACT;
+					}
+					if (alpha >= beta) {
+						++num_pruned;
+						cached_score.type = SCORE_UPPER_BOUND;
+						goto prune;
+					}
+				}
+			}
+prune:
+			cached_score.score = beta;
+			return beta;
+		}
+
+		int do_search_maxi(const Board &board, int alpha, int beta, int lookahead, int *move) {
+			if (move) { *move = -1; }
+			assert(alpha < beta);
+			Info &cached_score = cache.getput(board, Info::NIL);
+			if (check_cached(cached_score, alpha, beta, lookahead)) { return cached_score.score; }
+			cached_score.lookahead = lookahead;
+			if (lookahead == 0) {
+				cached_score.type = SCORE_EXACT;
+				return (cached_score.score = eval_board(board));
+			} else {
+				cached_score.type = SCORE_UPPER_BOUND;
+				Board next_state;
+				for (int i = 0; i < 4; ++i) {
+					next_state = board;
+					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+					tally_move();
+					int score = do_search_mini(next_state, alpha, beta, lookahead - 1);
+					if (score > alpha) {
+						alpha = score;
+						cached_score.type = SCORE_EXACT;
+						if (move) { *move = i; }
+					}
+					if (alpha >= beta) {
+						++num_pruned;
+						cached_score.type = SCORE_LOWER_BOUND;
+						goto prune;
+					}
+				}
+prune:
+				cached_score.score = alpha;
+				return alpha;
+			}
 		}
 
 		virtual int do_search(const Board &board, const RNG& /*rng*/, int lookahead, int *move) {
@@ -831,7 +830,7 @@ prune_maxi:
 			memset(num_cached, 0, sizeof(num_cached));
 			num_pruned = 0;
 			cache.reset();
-			int score = do_search_real(board, INT_MIN, INT_MAX, lookahead*2, move);
+			int score = do_search_maxi(board, INT_MIN, INT_MAX, lookahead*2, move);
 			printf("(caching-alpha-beta) alpha-beta pruned %d\n", num_pruned);
 			printf("(caching-alpha-beta) cache hits:");
 			for (int i = 0; i < imin(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
@@ -840,7 +839,7 @@ prune_maxi:
 		}
 };
 
-const SearcherCachingAlphaBeta::Info SearcherCachingAlphaBeta::Info::NIL = { -1, INT_MIN, INT_MAX };
+const SearcherCachingAlphaBeta::Info SearcherCachingAlphaBeta::Info::NIL = { -1, SCORE_UNKNOWN, INT_MIN };
 
 static int monotonicity(const uint8_t *begin, int stride, int n) {
 	int total = (n - 2);
