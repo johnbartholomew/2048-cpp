@@ -1,7 +1,14 @@
 #define STBI_HEADER_FILE_ONLY
 #include "stb_image.c"
 
+#define CRAZY_VERBOSE_CACHE_DEBUGGER 0
+#define USE_CACHE_VERIFICATION_MAP 0
+
 #include <GLFW/glfw3.h>
+
+#if USE_CACHE_VERIFICATION_MAP
+#include <map>
+#endif
 
 #include <cstring>
 #include <cstdio>
@@ -460,6 +467,15 @@ static uint64_t mix64(uint64_t key) {
 	return key;
 }
 
+#if CRAZY_VERBOSE_CACHE_DEBUGGER
+template <typename T>
+void print_blob(const T &v) {
+	uint8_t buf[sizeof(T)];
+	memcpy(buf, &v, sizeof(T));
+	for (int i = 0; i < sizeof(T); ++i) { printf("%02x", buf[i]); }
+}
+#endif
+
 template <typename T>
 class BoardCache {
 		enum {
@@ -472,6 +488,20 @@ class BoardCache {
 			uint64_t keys[BUCKET_SIZE];
 			T values[BUCKET_SIZE];
 		};
+
+		const T *bucket_get(const Bucket &bucket, const uint64_t k) const {
+			for (int i = 0; i < BUCKET_SIZE; ++i) {
+				if (bucket.keys[i] == k) { return &bucket.values[i]; }
+			}
+			return 0;
+		}
+
+#if USE_CACHE_VERIFICATION_MAP
+		typedef std::map<uint64_t, T> MapT;
+		typedef typename MapT::iterator MapIterT;
+		typedef typename MapT::value_type MapValueT;
+#endif
+
 	public:
 		BoardCache(): m_buckets(0) {
 			m_buckets = static_cast<Bucket*>(calloc(BUCKET_COUNT, sizeof(Bucket)));
@@ -485,27 +515,99 @@ class BoardCache {
 			memset(m_buckets, 0, BUCKET_COUNT * sizeof(Bucket));
 		}
 
-		T &getput(const Board &board, const T &initial) {
-			return getput(pack_board_state(board), initial);
+		void *where(const Board &board) { return where(pack_board_state(board)); }
+
+		const void *where(const Board &board) const { return where(pack_board_state(board)); }
+
+		void *where(const uint64_t k) {
+			const uint64_t h = mix64(k);
+			return static_cast<void*>(&m_buckets[h & BUCKET_INDEX_MASK]);
 		}
 
-		T &getput(const uint64_t k, const T &initial) {
-			assert(k != 0);
-			Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
+		const void *where(const uint64_t k) const {
+			const uint64_t h = mix64(k);
+			return static_cast<const void*>(&m_buckets[h & BUCKET_INDEX_MASK]);
+		}
+
+		const T *get(const uint64_t k, const void *where) const {
+			assert(k);
+			assert(where);
+			const Bucket &bucket = *static_cast<const Bucket*>(where);
 			for (int i = 0; i < BUCKET_SIZE; ++i) {
-				if (bucket.keys[i] == k) { return bucket.values[i]; }
+				if (bucket.keys[i] == k) {
+#if CRAZY_VERBOSE_CACHE_DEBUGGER
+					printf("%016lx: get (found) ", k);
+					print_blob(bucket.values[i]);
+					printf(" : ");
+					print_blob(m_verifier.find(k)->second);
+					printf("\n");
+#endif
+#if USE_CACHE_VERIFICATION_MAP
+					assert(m_verifier.count(k));
+					assert(memcmp(&m_verifier.find(k)->second, &bucket.values[i], sizeof(T)) == 0);
+#endif
+					return &bucket.values[i];
+				}
 			}
+#if CRAZY_VERBOSE_CACHE_DEBUGGER
+			printf("%016lx: get (not found)\n", k);
+#endif
+			//assert(m_verifier.count(k) == 0); // not actually necessarily true
+			return 0;
+		}
+
+		void put(const uint64_t k, void *where, const T &value) {
+			assert(k);
+			assert(where);
+			Bucket &bucket = *static_cast<Bucket*>(where);
+			for (int i = 0; i < BUCKET_SIZE; ++i) {
+				if (bucket.keys[i] == k) {
+#if CRAZY_VERBOSE_CACHE_DEBUGGER
+					printf("%016lx: replace ", k);
+					print_blob(bucket.values[i]);
+					printf(" : ");
+					print_blob(m_verifier.find(k)->second);
+					printf("\n");
+#endif
+#if USE_CACHE_VERIFICATION_MAP
+					assert(m_verifier.count(k));
+					assert(memcmp(&m_verifier.find(k)->second, &bucket.values[i], sizeof(T)) == 0);
+					m_verifier[k] = value;
+#endif
+					bucket.values[i] = value;
+					return;
+				}
+			}
+#if CRAZY_VERBOSE_CACHE_DEBUGGER
+			printf("%016lx: put (new)\n", k);
+#endif
+			//assert(m_verifier.count(k) == 0); // not actually necessarily true
 			for (int i = BUCKET_SIZE-1; i > 0; --i) {
 				bucket.keys[i] = bucket.keys[i-1];
 				bucket.values[i] = bucket.values[i-1];
 			}
 			bucket.keys[0] = k;
-			bucket.values[0] = initial;
-			return bucket.values[0];
+			bucket.values[0] = value;
+#if USE_CACHE_VERIFICATION_MAP
+			m_verifier[k] = value;
+#endif
+		}
+
+		const T *get(const Board &board) const {
+			const uint64_t k = pack_board_state(board);
+			return get(k, where(k));
+		}
+
+		void put(const Board &board, const T &value) {
+			const uint64_t k = pack_board_state(board);
+			put(k, where(k), value);
 		}
 
 	private:
 		Bucket *m_buckets;
+#if USE_CACHE_VERIFICATION_MAP
+		MapT m_verifier;
+#endif
 };
 
 typedef int (*Evaluator)(const Board &board);
@@ -675,10 +777,10 @@ class SearcherCachingMinimax : public Searcher {
 		int do_search_real(const Board &board, int lookahead, int *move) {
 			if (move) { *move = -1; }
 
-			Info &cached_score = cache.getput(board, Info::NIL);
-			if (cached_score.lookahead == lookahead) {
+			const Info *cached = cache.get(board);
+			if (cached && cached->lookahead == lookahead) {
 				tally_cache_hit(lookahead);
-				return cached_score.score;
+				return cached->score;
 			}
 
 			int best_score;
@@ -717,8 +819,8 @@ class SearcherCachingMinimax : public Searcher {
 				}
 			}
 
-			cached_score.lookahead = lookahead;
-			cached_score.score = best_score;
+			const Info new_cached = { lookahead, best_score };
+			cache.put(board, new_cached);
 			return best_score;
 		}
 
@@ -749,25 +851,29 @@ class SearcherCachingAlphaBeta : public Searcher {
 			++num_cached[imin(lookahead, STAT_DEPTH - 1)];
 		}
 
-		bool check_cached(const Info &cached_score, int alpha, int beta, int lookahead) {
+		bool check_cached(const Board &board, int alpha, int beta, int lookahead, int &output) {
+			const Info *cached = cache.get(board);
 			bool cache_valid = false;
-			if (cached_score.lookahead == lookahead) {
-				switch (cached_score.type) {
+			if (cached && cached->lookahead == lookahead) {
+				switch (cached->type) {
 					case SCORE_EXACT: cache_valid = true; break;
-					case SCORE_UPPER_BOUND: cache_valid = (cached_score.score <= alpha); break;
-					case SCORE_LOWER_BOUND: cache_valid = (cached_score.score >= beta); break;
+					case SCORE_UPPER_BOUND: cache_valid = (cached->score <= alpha); break;
+					case SCORE_LOWER_BOUND: cache_valid = (cached->score >= beta); break;
 				}
 			}
-			if (cache_valid) { tally_cache_hit(lookahead); }
+			if (cache_valid) {
+				tally_cache_hit(lookahead);
+				output = cached->score;
+			}
 			return cache_valid;
 		}
 
 		int do_search_mini(const Board &board, int alpha, int beta, int lookahead) {
 			assert(alpha < beta);
-			Info &cached_score = cache.getput(board, Info::NIL);
-			if (check_cached(cached_score, alpha, beta, lookahead)) { return cached_score.score; }
-			cached_score.lookahead = lookahead;
-			cached_score.type = SCORE_LOWER_BOUND;
+			int cache_output;
+			if (check_cached(board, alpha, beta, lookahead, cache_output)) { return cache_output; }
+
+			int cache_type = SCORE_LOWER_BOUND;
 			Board next_state;
 			for (int i = 0; i < NUM_TILES; ++i) {
 				if (board.state[i]) { continue; } // can only place tiles in empty cells
@@ -777,31 +883,33 @@ class SearcherCachingAlphaBeta : public Searcher {
 					int score = do_search_maxi(next_state, alpha, beta, lookahead - 1, 0);
 					if (score < beta) {
 						beta = score;
-						cached_score.type = SCORE_EXACT;
+						cache_type = SCORE_EXACT;
 					}
 					if (alpha >= beta) {
 						++num_pruned;
-						cached_score.type = SCORE_UPPER_BOUND;
+						cache_type = SCORE_UPPER_BOUND;
 						goto prune;
 					}
 				}
 			}
 prune:
-			cached_score.score = beta;
+			const Info new_cached = { (int16_t)lookahead, (int16_t)cache_type, beta };
+			cache.put(board, new_cached);
 			return beta;
 		}
 
 		int do_search_maxi(const Board &board, int alpha, int beta, int lookahead, int *move) {
 			if (move) { *move = -1; }
 			assert(alpha < beta);
-			Info &cached_score = cache.getput(board, Info::NIL);
-			if (check_cached(cached_score, alpha, beta, lookahead)) { return cached_score.score; }
-			cached_score.lookahead = lookahead;
+			int cache_output;
+			if (check_cached(board, alpha, beta, lookahead, cache_output)) { return cache_output; }
 			if (lookahead == 0) {
-				cached_score.type = SCORE_EXACT;
-				return (cached_score.score = eval_board(board));
+				int score = eval_board(board);
+				const Info new_cached = { 0, SCORE_EXACT, score };
+				cache.put(board, new_cached);
+				return score;
 			} else {
-				cached_score.type = SCORE_UPPER_BOUND;
+				int cache_type = SCORE_UPPER_BOUND;
 				Board next_state;
 				for (int i = 0; i < 4; ++i) {
 					next_state = board;
@@ -810,17 +918,18 @@ prune:
 					int score = do_search_mini(next_state, alpha, beta, lookahead - 1);
 					if (score > alpha) {
 						alpha = score;
-						cached_score.type = SCORE_EXACT;
+						cache_type = SCORE_EXACT;
 						if (move) { *move = i; }
 					}
 					if (alpha >= beta) {
 						++num_pruned;
-						cached_score.type = SCORE_LOWER_BOUND;
+						cache_type = SCORE_LOWER_BOUND;
 						goto prune;
 					}
 				}
 prune:
-				cached_score.score = alpha;
+				const Info new_cached = { (int16_t)lookahead, (int16_t)cache_type, alpha };
+				cache.put(board, new_cached);
 				return alpha;
 			}
 		}
@@ -1067,10 +1176,6 @@ int main(int /*argc*/, char** /*argv*/) {
 	s_history.reset();
 
 #if 0
-	s_history.new_game(s_anim);
-	start_anim(ANIM_TIME_NORMAL);
-#endif
-
 	{
 		Board board;
 		RNG rng;
@@ -1083,6 +1188,10 @@ int main(int /*argc*/, char** /*argv*/) {
 		s_anim.reset();
 		start_anim(0.0);
 	}
+#else
+	s_history.new_game(s_anim);
+	start_anim(ANIM_TIME_NORMAL);
+#endif
 
 	glfwSetKeyCallback(wnd, &handle_key);
 
