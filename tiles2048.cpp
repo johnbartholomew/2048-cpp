@@ -382,9 +382,10 @@ struct BoardHistory {
 		rngs[0].reset(seed);
 	}
 
-	void reset(const RNG &initial_state) {
+	void reset(const Board &board, const RNG &initial_state) {
 		clear_history();
 		rngs[0] = initial_state;
+		boards[0] = board;
 	}
 
 	void new_game(AnimState &anim) {
@@ -436,6 +437,15 @@ static uint64_t pack_board_state(const Board &board) {
 		k = (k << 4) | board.state[i];
 	}
 	return k;
+}
+
+static void unpack_board_state(Board &board, const uint64_t state) {
+	assert(NUM_TILES == 16);
+	uint64_t k = state;
+	for (int i = 0; i < 16; ++i) {
+		board.state[15 - i] = (k & 0x0F);
+		k >>= 4;
+	}
 }
 
 static uint64_t mix64(uint64_t key) {
@@ -1050,8 +1060,25 @@ int main(int /*argc*/, char** /*argv*/) {
 	s_autoplay = false;
 	s_anim.reset();
 	s_history.reset();
+
+#if 0
 	s_history.new_game(s_anim);
 	start_anim(ANIM_TIME_NORMAL);
+#endif
+
+	{
+		Board board;
+		RNG rng;
+		unpack_board_state(board, 0x7100630035102200ul);
+		rng.x = 0xdec687c8u;
+		rng.y = 0x2c30e98bu;
+		rng.z = 0xa20ee555u;
+		rng.w = 0x8587a82eu;
+		s_history.reset(board, rng);
+		s_anim.reset();
+		start_anim(0.0);
+	}
+
 	glfwSetKeyCallback(wnd, &handle_key);
 
 	while (!glfwWindowShouldClose(wnd)) {
