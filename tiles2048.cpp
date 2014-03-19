@@ -475,19 +475,6 @@ struct BoardCache {
 			memset(m_buckets, 0, BUCKET_COUNT * sizeof(Bucket));
 		}
 
-		const T *get(const Board &board) const {
-			return get(pack_board_state(board));
-		}
-
-		const T *get(const uint64_t k) const {
-			assert(k != 0);
-			const Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
-			for (int i = 0; i < BUCKET_SIZE; ++i) {
-				if (bucket.keys[i] == k) { return &bucket.values[i]; }
-			}
-			return 0;
-		}
-
 		T &getput(const Board &board, const T &initial) {
 			return getput(pack_board_state(board), initial);
 		}
@@ -505,22 +492,6 @@ struct BoardCache {
 			bucket.keys[0] = k;
 			bucket.values[0] = initial;
 			return bucket.values[0];
-		}
-
-		void put(const Board &board, const T &value) {
-			put(pack_board_state(board), value);
-		}
-
-		void put(const uint64_t k, const T &value) {
-			assert(k != 0);
-			Bucket &bucket = m_buckets[mix64(k) & BUCKET_INDEX_MASK];
-			// rotate the entries
-			for (int i = BUCKET_SIZE-1; i > 0; --i) {
-				bucket.keys[i] = bucket.keys[i-1];
-				bucket.values[i] = bucket.values[i-1];
-			}
-			bucket.keys[0] = k;
-			bucket.values[0] = value;
 		}
 
 	private:
