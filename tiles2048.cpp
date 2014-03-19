@@ -566,13 +566,12 @@ class SearcherNaiveMinimax : public Searcher {
 			Board next_state;
 			if (lookahead & 1) {
 				// minimise
-				uint8_t free[NUM_TILES];
-				int nfree = board.count_free(free);
 				best_score = INT_MAX;
-				for (int i = 0; i < nfree; ++i) {
+				for (int i = 0; i < NUM_TILES; ++i) {
+					if (board.state[i]) { continue; } // can only place tiles in empty cells
 					for (int value = 1; value < 3; ++value) {
 						next_state = board;
-						next_state.state[free[i]] = value;
+						next_state.state[i] = value;
 						int score = do_search_real(next_state, lookahead - 1, 0);
 						if (score < best_score) {
 							best_score = score;
@@ -611,12 +610,11 @@ class SearcherAlphaBeta : public Searcher {
 
 		int do_search_mini(const Board &board, int alpha, int beta, int lookahead) {
 			Board next_state;
-			uint8_t free[NUM_TILES];
-			int nfree = board.count_free(free);
-			for (int i = 0; i < nfree; ++i) {
+			for (int i = 0; i < NUM_TILES; ++i) {
+				if (board.state[i]) { continue; } // can only place tiles in empty cells
 				for (int value = 1; value < 3; ++value) {
 					next_state = board;
-					next_state.state[free[i]] = value;
+					next_state.state[i] = value;
 					beta = imin(beta, do_search_maxi(next_state, alpha, beta, lookahead - 1, 0));
 					if (alpha >= beta) { ++num_pruned; return beta; }
 				}
@@ -676,13 +674,12 @@ class SearcherCachingMinimax : public Searcher {
 				Board next_state;
 				if (lookahead & 1) {
 					// minimise
-					uint8_t free[NUM_TILES];
-					int nfree = board.count_free(free);
 					best_score = INT_MAX;
-					for (int i = 0; i < nfree; ++i) {
+					for (int i = 0; i < NUM_TILES; ++i) {
+						if (board.state[i]) { continue; } // can only place tiles in empty cells
 						for (int value = 1; value < 3; ++value) {
 							next_state = board;
-							next_state.state[free[i]] = value;
+							next_state.state[i] = value;
 							int score = do_search_real(next_state, lookahead - 1, 0);
 							if (score < best_score) {
 								best_score = score;
