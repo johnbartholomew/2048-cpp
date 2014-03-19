@@ -24,6 +24,33 @@ Build requirements
 * The 'Clear Sans' font, from https://01.org/clear-sans (used in tiles.svg)
 * Some way of rasterising an SVG file to an image (the Makefile uses Inkscape)
 
+To Do
+-----
+
+Like any project, this one has an effectively infinite to-do list. Starting with the most interesting:
+
+* Better board scoring heuristics (*many* possibilities here!)
+* Alpha-Beta pruned minimax
+* Alpha-Beta pruned minimax with caching
+* Run the search in a background thread
+* Iterative Deepening Depth First Search (with caching)
+* Retaining cache state between moves during autoplay
+* Game over message
+* Game WIN message
+
+Beyond this point I will most likely have got bored and moved onto other projects:
+
+* Alternative basic search/AI algorithms (e.g., maximise *expected* board score rather than assuming antagonistic placement of new tiles?)
+* A man-page
+* On-screen help (showing keyboard controls)
+* Run-time configuration (via command line or a config file) of board scoring heuristic, search algorithm, search depth/time, win condition
+* High score table (offline/local only)
+* Pack data (e.g., font) into the executable
+* Autotools build
+* Clean (schroot or similar) build script to produce distributable binaries
+* Win32 build?
+* Release!
+
 Legal / Intellectual Property
 -----------------------------
 
