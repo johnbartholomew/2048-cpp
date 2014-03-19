@@ -602,6 +602,9 @@ class SearcherNaiveMinimax : public Searcher {
 		}
 };
 
+static int imin(int a, int b) { return (a < b ? a : b); }
+static int imax(int a, int b) { return (a > b ? a : b); }
+
 class SearcherAlphaBeta : public Searcher {
 	private:
 		int pruned;
@@ -657,8 +660,6 @@ class SearcherAlphaBeta : public Searcher {
 			return score;
 		}
 };
-
-static int imin(int a, int b) { return (a < b ? a : b); }
 
 class SearcherCachingMinimax : public Searcher {
 	private:
