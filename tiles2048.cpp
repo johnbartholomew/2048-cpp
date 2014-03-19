@@ -791,6 +791,70 @@ static bool automove(BoardHistory &history, AnimState &anim) {
 	}
 }
 
+static void tile_verts(int value, float x, float y, float scale) {
+	x += 64.0f; // centre of the tile
+	y += 64.0f; // centre of the tile
+	const float extent = scale * 64.0f;
+	const float u = (value % 4) * 0.25f;
+	const float v = (value / 4) * 0.25f;
+	glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x - extent, y - extent);
+	glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x + extent, y - extent);
+	glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x + extent, y + extent);
+	glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x - extent, y + extent);
+}
+
+static void render_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
+	glColor4ub(255, 255, 255, 255);
+	glBegin(GL_QUADS);
+	for (int i = 0; i < anim.ntiles; ++i) {
+		const TileAnim &tile = anim.tiles[i];
+		tile_verts(tile.value, tile.x.eval(alpha), tile.y.eval(alpha), tile.scale.eval(alpha));
+	}
+	glEnd();
+}
+
+static void render_static(const Board &board) {
+	glColor4ub(255, 255, 255, 255);
+	glBegin(GL_QUADS);
+	for (int i = 0; i < NUM_TILES; ++i) {
+		const int value = board.state[i];
+		if (value) {
+			float x, y;
+			tile_idx_to_xy(i, &x, &y);
+			tile_verts(value, x, y, 1.0f);
+		}
+	}
+	glEnd();
+}
+
+static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const AnimState &anim) {
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glViewport(0, 0, wnd_w, wnd_h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0.0, (double)wnd_w, (double)wnd_h, 0.0, -1.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	glTranslatef((float)wnd_w * 0.5f - 256.0f, (float)wnd_h * 0.5f - 256.0f, 0.0f);
+
+	glDisable(GL_TEXTURE_2D);
+	glColor4ub(187, 173, 160, 255);
+	glBegin(GL_QUADS);
+	glVertex2f(-16.0f, 528.0f);
+	glVertex2f(528.0f, 528.0f);
+	glVertex2f(528.0f, -16.0f);
+	glVertex2f(-16.0f, -16.0f);
+	glEnd();
+
+	glEnable(GL_TEXTURE_2D);
+	if (alpha < 1.0) {
+		render_anim(alpha, board, anim);
+	} else {
+		render_static(board);
+	}
+}
+
 // -------- GLOBAL STATE -----------------------------------------------------------------------
 
 static BoardHistory s_history;
@@ -843,42 +907,6 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 	}
 }
 
-static void tile_verts(int value, float x, float y, float scale) {
-	x += 64.0f; // centre of the tile
-	y += 64.0f; // centre of the tile
-	const float extent = scale * 64.0f;
-	const float u = (value % 4) * 0.25f;
-	const float v = (value / 4) * 0.25f;
-	glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x - extent, y - extent);
-	glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x + extent, y - extent);
-	glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x + extent, y + extent);
-	glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x - extent, y + extent);
-}
-
-static void render_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
-	glColor4ub(255, 255, 255, 255);
-	glBegin(GL_QUADS);
-	for (int i = 0; i < anim.ntiles; ++i) {
-		const TileAnim &tile = anim.tiles[i];
-		tile_verts(tile.value, tile.x.eval(alpha), tile.y.eval(alpha), tile.scale.eval(alpha));
-	}
-	glEnd();
-}
-
-static void render_static(const Board &board) {
-	glColor4ub(255, 255, 255, 255);
-	glBegin(GL_QUADS);
-	for (int i = 0; i < NUM_TILES; ++i) {
-		const int value = board.state[i];
-		if (value) {
-			float x, y;
-			tile_idx_to_xy(i, &x, &y);
-			tile_verts(value, x, y, 1.0f);
-		}
-	}
-	glEnd();
-}
-
 int main(int /*argc*/, char** /*argv*/) {
 	glfwInit();
 	GLFWwindow *wnd = glfwCreateWindow(700, 700, "2048", NULL, NULL);
@@ -918,33 +946,10 @@ int main(int /*argc*/, char** /*argv*/) {
 		assert(alpha >= 0.0f);
 		if (alpha > 1.0f) { alpha = 1.0f; }
 
-		glClear(GL_COLOR_BUFFER_BIT);
-
 		int wnd_w, wnd_h;
 		glfwGetFramebufferSize(wnd, &wnd_w, &wnd_h);
-		glViewport(0, 0, wnd_w, wnd_h);
-		glMatrixMode(GL_PROJECTION);
-		glLoadIdentity();
-		glOrtho(0.0, (double)wnd_w, (double)wnd_h, 0.0, -1.0, 1.0);
-		glMatrixMode(GL_MODELVIEW);
-		glLoadIdentity();
-		glTranslatef((float)wnd_w * 0.5f - 256.0f, (float)wnd_h * 0.5f - 256.0f, 0.0f);
 
-		glDisable(GL_TEXTURE_2D);
-		glColor4ub(187, 173, 160, 255);
-		glBegin(GL_QUADS);
-		glVertex2f(-16.0f, 528.0f);
-		glVertex2f(528.0f, 528.0f);
-		glVertex2f(528.0f, -16.0f);
-		glVertex2f(-16.0f, -16.0f);
-		glEnd();
-
-		glEnable(GL_TEXTURE_2D);
-		if (alpha < 1.0) {
-			render_anim(alpha, s_history.get(), s_anim);
-		} else {
-			render_static(s_history.get());
-		}
+		render(wnd_w, wnd_h, alpha, s_history.get(), s_anim);
 
 		glfwSwapBuffers(wnd);
 
