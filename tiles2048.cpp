@@ -428,9 +428,44 @@ struct BoardHistory {
 	}
 };
 
+static int monotonicity(const uint8_t *begin, int stride, int n) {
+	int total = (n - 2);
+	int i;
+	for (i = 0; (*begin == 0) && i < n; ++i) { begin += stride; }
+	int last_value = *begin, last_sign = 0;
+	for (; i < n; ++i) {
+		if (*begin) {
+			int delta = (*begin - last_value);
+			int sign = (0 < delta) - (delta < 0);
+			if (sign) {
+				if (last_sign && last_sign != sign) { --total; }
+				last_sign = sign;
+			}
+			last_value = *begin;
+		}
+		begin += stride;
+	}
+	return total;
+}
+
+static int ai_score_monotonicity(const Board &board) {
+	int total = 0;
+	// monotonicity of rows
+	for (int i = 0; i < TILES_Y; ++i) {
+		total += monotonicity(&board.state[i*TILES_X], 1, TILES_X);
+	}
+	// monotonicity of columns
+	for (int j = 0; j < TILES_Y; ++j) {
+		total += monotonicity(&board.state[j], TILES_X, TILES_Y);
+	}
+	return total;
+}
+
 static int ai_eval_board(const Board &board) {
+	// try to maximise monotonicity
+	return ai_score_monotonicity(board);
 	// try to maximise free space
-	return board.count_free();
+	//return board.count_free();
 }
 
 typedef int (*Evaluator)(const Board &board);
