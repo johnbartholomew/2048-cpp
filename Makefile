@@ -7,11 +7,8 @@ CPPFLAGS :=
 .PHONY: all
 all: tiles2048
 
-tiles2048: tiles2048.o stb_image.o glfontstash.o
+tiles2048: tiles2048.o glfontstash.o
 	g++ $(CXXFLAGS) -o $@ $^ -lfreetype -lglfw -lGL
-
-stb_image.o: stb_image.c
-	gcc $(CFLAGS) $(CPPFLAGS) -w -o $@ -c $<
 
 glfontstash.o: glfontstash.c | fontstash.h glfontstash.h
 	gcc $(CFLAGS) $(CPPFLAGS) \
@@ -23,4 +20,4 @@ tiles2048.o: tiles2048.cpp
 
 .PHONY: clean fullclean
 clean:
-	rm -f tiles2048.o stb_image.o glfontstash.o tiles2048
+	rm -f tiles2048.o glfontstash.o tiles2048

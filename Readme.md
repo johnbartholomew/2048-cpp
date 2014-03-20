@@ -70,10 +70,6 @@ I did not copy any of the code from that implementation, but I did copy some
 stylistic things (e.g., colour values).  Gabriele Cirulli's implementation is
 released under the MIT licence.
 
-I did not create stb_image.c.  stb_image.c has been placed in the public domain
-by its author(s) (Sean Barrett, plus contributors).
-stb_image.c is from http://nothings.org/stb/
-
 I did not create fontstash.h or glfontstash.h.  Licensing details are included
 in comment blocks in the files.  Font Stash is written by Mikko Mononen, and is
 available at: https://github.com/memononen/fontstash
