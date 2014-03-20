@@ -1,5 +1,4 @@
-#define STBI_HEADER_FILE_ONLY
-#include "stb_image.c"
+#include "glfontstash.h"
 
 #define CRAZY_VERBOSE_CACHE_DEBUGGER 0
 #define USE_CACHE_VERIFICATION_MAP 0
@@ -13,6 +12,7 @@
 #endif
 
 #include <cstring>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <climits>
@@ -1070,71 +1070,59 @@ static bool automove(BoardHistory &history, AnimState &anim) {
 }
 #endif
 
-static void tile_verts(int value, float x, float y, float scale) {
-	x += 64.0f; // centre of the tile
-	y += 64.0f; // centre of the tile
-	const float extent = scale * 64.0f;
-	const float u = (value % 4) * 0.25f;
-	const float v = (value / 4) * 0.25f;
-	glTexCoord2f(u + 0.00f, v + 0.00f); glVertex2f(x - extent, y - extent);
-	glTexCoord2f(u + 0.25f, v + 0.00f); glVertex2f(x + extent, y - extent);
-	glTexCoord2f(u + 0.25f, v + 0.25f); glVertex2f(x + extent, y + extent);
-	glTexCoord2f(u + 0.00f, v + 0.25f); glVertex2f(x - extent, y + extent);
-}
-
-static void render_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
-	glColor4ub(255, 255, 255, 255);
-	glBegin(GL_QUADS);
-	for (int i = 0; i < anim.ntiles; ++i) {
-		const TileAnim &tile = anim.tiles[i];
-		tile_verts(tile.value, tile.x.eval(alpha), tile.y.eval(alpha), tile.scale.eval(alpha));
+static void render_rounded_square(float x, float y, float extent, float rounding) {
+	assert(rounding >= 0.0f);
+	assert(extent >= rounding);
+	const float inner_extent = extent - rounding;
+	glBegin(GL_TRIANGLES);
+	if (inner_extent > 0.0f) {
+		glVertex2f(x - inner_extent, y - extent); // top-left
+		glVertex2f(x - inner_extent, y + extent);
+		glVertex2f(x + inner_extent, y - extent);
+		glVertex2f(x - inner_extent, y + extent); // bottom-right
+		glVertex2f(x + inner_extent, y + extent);
+		glVertex2f(x + inner_extent, y - extent);
 	}
-	glEnd();
-}
+	if (rounding > 0.0f) {
+		if (inner_extent > 0.0f) {
+			glVertex2f(x - extent,       y - inner_extent); // top-left
+			glVertex2f(x - extent,       y + inner_extent);
+			glVertex2f(x - inner_extent, y - inner_extent);
+			glVertex2f(x - extent,       y + inner_extent); // bottom-right
+			glVertex2f(x - inner_extent, y + inner_extent);
+			glVertex2f(x - inner_extent, y - inner_extent);
 
-static void render_static(const Board &board) {
-	glColor4ub(255, 255, 255, 255);
-	glBegin(GL_QUADS);
-	for (int i = 0; i < NUM_TILES; ++i) {
-		const int value = board.state[i];
-		if (value) {
-			float x, y;
-			tile_idx_to_xy(i, &x, &y);
-			tile_verts(value, x, y, 1.0f);
+			glVertex2f(x + inner_extent, y - inner_extent); // top-left
+			glVertex2f(x + inner_extent, y + inner_extent);
+			glVertex2f(x + extent,       y - inner_extent);
+			glVertex2f(x + inner_extent, y + inner_extent); // bottom-right
+			glVertex2f(x + extent,       y + inner_extent);
+			glVertex2f(x + extent,       y - inner_extent);
+		}
+
+		float dx = rounding, dy = 0.0f;
+		int nsegments = 7;
+		for (int i = 0; i < 4; ++i) {
+			const float cx = x + ((i == 0 || i == 3) ? inner_extent : -inner_extent);
+			const float cy = y + ((i & 2) ? inner_extent : -inner_extent);
+			for (int j = 0; j < nsegments; ++j) {
+				const int segment = i*nsegments + j;
+				const float angle = (float)(segment+1) * ((2*(float)M_PI) / (4*nsegments));
+				glVertex2f(cx, cy);
+				glVertex2f(cx + dx, cy + dy);
+				dx = rounding * cosf(angle);
+				dy = rounding * -sinf(angle);
+				glVertex2f(cx + dx, cy + dy);
+			}
 		}
 	}
 	glEnd();
 }
 
-static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const AnimState &anim) {
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	glViewport(0, 0, wnd_w, wnd_h);
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glOrtho(0.0, (double)wnd_w, (double)wnd_h, 0.0, -1.0, 1.0);
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	glTranslatef((float)wnd_w * 0.5f - 256.0f, (float)wnd_h * 0.5f - 256.0f, 0.0f);
-
-	glDisable(GL_TEXTURE_2D);
-	glColor4ub(187, 173, 160, 255);
-	glBegin(GL_QUADS);
-	glVertex2f(-16.0f, 528.0f);
-	glVertex2f(528.0f, 528.0f);
-	glVertex2f(528.0f, -16.0f);
-	glVertex2f(-16.0f, -16.0f);
-	glEnd();
-
-	glEnable(GL_TEXTURE_2D);
-	if (alpha < 1.0) {
-		render_anim(alpha, board, anim);
-	} else {
-		render_static(board);
-	}
-}
-
 // -------- GLOBAL STATE -----------------------------------------------------------------------
+
+static FONScontext *fons;
+static int font;
 
 static BoardHistory s_history;
 static AnimState s_anim;
@@ -1144,6 +1132,76 @@ static bool s_autoplay;
 
 static const double ANIM_TIME_NORMAL = 0.2;
 static const double ANIM_TIME_AUTOPLAY = 0.05;
+
+static const uint8_t TILE_COLORS[16][4] = {
+	{ 211, 199, 187, 255 }, // blank tile
+	{ 238, 228, 218, 255 }, //     2
+	{ 237, 224, 200, 255 }, //     4
+	{ 242, 177, 121, 255 }, //     8
+
+	{ 245, 149,  99, 255 }, //    16
+	{ 246, 124,  95, 255 }, //    32
+	{ 246,  94,  59, 255 }, //    64
+	{ 237, 207, 114, 255 }, //   128
+
+	{ 237, 204,  97, 255 }, //   256
+	{ 237, 200,  80, 255 }, //   512
+	{ 237, 197,  63, 255 }, //  1024
+	{ 237, 194,  46, 255 }, //  2048
+
+	{ 206, 234,  49, 255 }, //  4096
+	{ 188, 234,  49, 255 }, //  8192
+	{ 171, 234,  49, 255 }, // 16384
+	{ 153, 234,  49, 255 }  // 32768
+};
+
+static const uint8_t TILE_TEXT_COLORS[16][4] = {
+	{ 255, 255,   0, 255 }, // blank tile
+	{ 119, 110, 101, 255 }, //     2
+	{ 119, 110, 101, 255 }, //     4
+	{ 249, 246, 242, 255 }, //     8
+
+	{ 249, 246, 242, 255 }, //    16
+	{ 249, 246, 242, 255 }, //    32
+	{ 249, 246, 242, 255 }, //    64
+	{ 249, 246, 242, 255 }, //   128
+
+	{ 249, 246, 242, 255 }, //   256
+	{ 249, 246, 242, 255 }, //   512
+	{ 249, 246, 242, 255 }, //  1024
+	{ 249, 246, 242, 255 }, //  2048
+
+	{ 119, 110, 101, 255 }, //  4096
+	{ 119, 110, 101, 255 }, //  8192
+	{ 119, 110, 101, 255 }, // 16384
+	{ 119, 110, 101, 255 }  // 32768
+};
+
+static const char *TILE_TEXT[16] = {
+	"",
+	"2",
+	"4",
+	"8",
+	"16",
+	"32",
+	"64",
+	"128",
+	"256",
+	"512",
+	"1024",
+	"2048",
+	"4096",
+	"8192",
+	"16384",
+	"32768"
+};
+
+static const float TILE_EXTENT = 64.0f - 6.0f;
+static const float TILE_ROUNDING = 4.0f;
+static const float TILE_FONT_SIZE = 50.0f;
+
+static const float BOARD_EXTENT = 256.0f + 6.0f;
+static const float BOARD_ROUNDING = 6.0f;
 
 static void start_anim(const double len) {
 	if (s_anim.tiles_changed()) {
@@ -1159,6 +1217,79 @@ static void stop_anim() {
 	s_anim_time0 = s_anim_time1 = 0.0;
 }
 #endif
+
+static void render_tile(int value, float x, float y, float scale) {
+	assert(value >= 0 && value < 16);
+	const uint8_t *col = TILE_COLORS[value];
+	const uint8_t *text_col = TILE_TEXT_COLORS[value];
+	const char *text = TILE_TEXT[value];
+
+	glPushMatrix();
+	glTranslatef(x + 64.0f, y + 64.0f, 0.0f);
+	glScalef(scale, scale, 1.0f);
+
+	glDisable(GL_TEXTURE_2D);
+	glColor4ub(col[0], col[1], col[2], col[3]);
+	render_rounded_square(0.0f, 0.0f, TILE_EXTENT, TILE_ROUNDING);
+
+	if (value > 0) {
+		glEnable(GL_TEXTURE_2D);
+		fonsClearState(fons);
+		fonsSetAlign(fons, FONS_ALIGN_CENTER | FONS_ALIGN_MIDDLE );
+		fonsSetSize(fons, TILE_FONT_SIZE);
+		fonsSetColor(fons, glfonsRGBA(text_col[0], text_col[1], text_col[2], text_col[3]));
+		fonsSetFont(fons, font);
+		fonsDrawText(fons, 0.0f, 0.0f, text, 0);
+	}
+
+	glPopMatrix();
+}
+
+static void render_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
+	for (int i = 0; i < anim.ntiles; ++i) {
+		const TileAnim &tile = anim.tiles[i];
+		render_tile(tile.value, tile.x.eval(alpha), tile.y.eval(alpha), tile.scale.eval(alpha));
+	}
+}
+
+static void render_static(const Board &board) {
+	for (int i = 0; i < NUM_TILES; ++i) {
+		const int value = board.state[i];
+		if (value) {
+			float x, y;
+			tile_idx_to_xy(i, &x, &y);
+			render_tile(value, x, y, 1.0f);
+		}
+	}
+}
+
+static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const AnimState &anim) {
+	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glViewport(0, 0, wnd_w, wnd_h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0.0, (double)wnd_w, (double)wnd_h, 0.0, -1.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	glDisable(GL_TEXTURE_2D);
+	glColor4ub(187, 173, 160, 255);
+	render_rounded_square(wnd_w/2, wnd_h/2, BOARD_EXTENT, BOARD_ROUNDING);
+
+	glTranslatef((float)wnd_w * 0.5f - 256.0f, (float)wnd_h * 0.5f - 256.0f, 0.0f);
+
+	if (alpha < 1.0) {
+		render_anim(alpha, board, anim);
+	} else {
+		render_static(board);
+	}
+}
 
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
 	if (action == GLFW_PRESS) {
@@ -1191,26 +1322,15 @@ int main(int /*argc*/, char** /*argv*/) {
 	GLFWwindow *wnd = glfwCreateWindow(700, 700, "2048", NULL, NULL);
 
 	glfwMakeContextCurrent(wnd);
-
-	int tiles_tex_w, tiles_tex_h;
-	uint8_t *tiles_tex_data = stbi_load("tiles.png", &tiles_tex_w, &tiles_tex_h, 0, 4);
-	GLuint tex_id;
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glGenTextures(1, &tex_id);
-	glBindTexture(GL_TEXTURE_2D, tex_id);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tiles_tex_w, tiles_tex_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, tiles_tex_data);
-	glEnable(GL_TEXTURE_2D);
 	glDisable(GL_DEPTH_TEST);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glEnable(GL_CULL_FACE);
 
-	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
+	fons = glfonsCreate(128, 128, FONS_ZERO_TOPLEFT);
+	font = fonsAddFont(fons, "clearsans", "ClearSans-Bold.ttf");
+	if (font == FONS_INVALID) {
+		fprintf(stderr, "could not load font 'ClearSans-Bold.ttf'");
+		return 1;
+	}
 
 	s_autoplay = false;
 	s_anim.reset();
