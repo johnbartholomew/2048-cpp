@@ -1361,16 +1361,14 @@ int main(int /*argc*/, char** /*argv*/) {
 	glfwSetKeyCallback(wnd, &handle_key);
 
 	while (!glfwWindowShouldClose(wnd)) {
-		double t = glfwGetTime();
-		float alpha = (t - s_anim_time0) / (s_anim_time1 - s_anim_time0);
+		const double t = glfwGetTime();
+		const float alpha = min(1.0, (t - s_anim_time0) / (s_anim_time1 - s_anim_time0));
+		const bool anim_done = (t >= s_anim_time1);
 		assert(alpha >= 0.0f);
-		if (alpha > 1.0f) { alpha = 1.0f; }
 
 		int wnd_w, wnd_h;
 		glfwGetFramebufferSize(wnd, &wnd_w, &wnd_h);
-
 		render(wnd_w, wnd_h, alpha, s_history.get(), s_anim);
-
 		glfwSwapBuffers(wnd);
 
 		// if we're not animating then be nice and don't spam the CPU & GPU
