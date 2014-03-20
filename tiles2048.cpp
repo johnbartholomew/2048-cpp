@@ -3,6 +3,8 @@
 
 #define CRAZY_VERBOSE_CACHE_DEBUGGER 0
 #define USE_CACHE_VERIFICATION_MAP 0
+#define PRINT_BOARD_STATE 0
+#define PRINT_CACHE_STATS 0
 
 #include <GLFW/glfw3.h>
 
@@ -758,7 +760,9 @@ class SearcherAlphaBeta : public Searcher {
 			assert(lookahead >= 0);
 			num_pruned = 0;
 			int score = do_search_maxi(board, INT_MIN, INT_MAX, lookahead*2, move);
+#if PRINT_CACHE_STATS
 			printf("(alpha-beta) alpha-beta pruned %d\n", num_pruned);
+#endif
 			return score;
 		}
 };
@@ -829,9 +833,11 @@ class SearcherCachingMinimax : public Searcher {
 			memset(num_cached, 0, sizeof(num_cached));
 			cache.reset();
 			int score = do_search_real(board, lookahead*2, move);
+#if PRINT_CACHE_STATS
 			printf("(caching-minimax) cache hits:");
 			for (int i = 0; i < imin(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
 			printf("\n");
+#endif
 			return score;
 		}
 };
@@ -940,10 +946,12 @@ prune:
 			num_pruned = 0;
 			cache.reset();
 			int score = do_search_maxi(board, INT_MIN, INT_MAX, lookahead*2, move);
+#if PRINT_CACHE_STATS
 			printf("(caching-alpha-beta) alpha-beta pruned %d\n", num_pruned);
 			printf("(caching-alpha-beta) cache hits:");
 			for (int i = 0; i < imin(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
 			printf("\n");
+#endif
 			return score;
 		}
 };
@@ -993,11 +1001,27 @@ static int ai_eval_board(const Board &board) {
 static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *score = 0) {
 	int best_score = searcher.search(evalfn, board, rng, lookahead);
 	int best_move = searcher.get_best_first_move();
+#if 1 || PRINT_CACHE_STATS
 	printf("tried %d moves!\n", searcher.get_num_moves());
+#endif
 	if (score) { *score = best_score; }
 	return best_move;
 }
 
+static bool automove(BoardHistory &history, AnimState &anim) {
+	const int lookahead = 5;
+	//SearcherCheat searcher;
+	SearcherCachingAlphaBeta searcher;
+	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), lookahead);
+	if (move != -1) {
+		history.move(move, anim);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+#if 0
 static bool automove(BoardHistory &history, AnimState &anim) {
 	const int lookahead = 3;
 
@@ -1009,8 +1033,10 @@ static bool automove(BoardHistory &history, AnimState &anim) {
 
 	const Board &board = history.get();
 	const RNG &rng = history.get_rng();
+#if PRINT_BOARD_STATE
 	printf("AI move, board state: %016lx rng %08x,%08x,%08x,%08x (lookahead = %d)\n",
 			pack_board_state(board), rng.x, rng.y, rng.z, rng.w, lookahead);
+#endif
 
 	int move_a = ai_move(searcher_a, &ai_eval_board, board, rng, lookahead);
 	int move_b = ai_move(searcher_b, &ai_eval_board, board, rng, lookahead);
@@ -1028,6 +1054,7 @@ static bool automove(BoardHistory &history, AnimState &anim) {
 		return false;
 	}
 }
+#endif
 
 static void tile_verts(int value, float x, float y, float scale) {
 	x += 64.0f; // centre of the tile
