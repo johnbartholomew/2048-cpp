@@ -1119,16 +1119,7 @@ static void render_rounded_square(float x, float y, float extent, float rounding
 	glEnd();
 }
 
-// -------- GLOBAL STATE -----------------------------------------------------------------------
-
-static FONScontext *fons;
-static int font;
-
-static BoardHistory s_history;
-static AnimState s_anim;
-static double s_anim_time0;
-static double s_anim_time1;
-static bool s_autoplay;
+// -------- GLOBAL GAME CONFIGURATION/STYLE ----------------------------------------------------
 
 static const double ANIM_TIME_NORMAL = 0.2;
 static const double ANIM_TIME_AUTOPLAY = 0.05;
@@ -1202,6 +1193,17 @@ static const float TILE_FONT_SIZE = 50.0f;
 
 static const float BOARD_EXTENT = 256.0f + 6.0f;
 static const float BOARD_ROUNDING = 6.0f;
+
+// -------- GLOBAL STATE -----------------------------------------------------------------------
+
+static FONScontext *fons;
+static int font;
+
+static BoardHistory s_history;
+static AnimState s_anim;
+static double s_anim_time0;
+static double s_anim_time1;
+static bool s_autoplay;
 
 static void start_anim(const double len) {
 	if (s_anim.tiles_changed()) {
