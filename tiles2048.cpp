@@ -1,5 +1,6 @@
 #include "glfontstash.h"
 #include "tinythread.h"
+#include "mintomic/mintomic.h"
 
 #define CRAZY_VERBOSE_CACHE_DEBUGGER 0
 #define USE_CACHE_VERIFICATION_MAP 0
@@ -619,10 +620,12 @@ typedef int (*Evaluator)(const Board &board);
 
 class Searcher {
 	public:
-		Searcher(): evalfn(0), num_moves(0), best_first_move(-1), m_cancelled(false) {}
+		Searcher(): evalfn(0), num_moves(0), best_first_move(-1) {
+			m_cancelled._nonatomic = 0;
+		}
 
 		void cancel() {
-			this->m_cancelled = true;
+			mint_store_32_relaxed(&m_cancelled, 1);
 		}
 
 		int search(Evaluator evalfn, const Board &board, const RNG &rng, int lookahead) {
@@ -630,8 +633,12 @@ class Searcher {
 			this->evalfn = evalfn;
 			this->num_moves = 0;
 			this->best_first_move = -1;
-			this->m_cancelled = false;
-			return do_search(board, rng, lookahead, &best_first_move);
+			this->m_cancelled._nonatomic = 0;
+			int move;
+			int score = do_search(board, rng, lookahead, &move);
+			if (this->m_cancelled._nonatomic) { return INT_MIN; }
+			this->best_first_move = move;
+			return score;
 		}
 
 		int get_num_moves() const { return num_moves; }
@@ -640,13 +647,13 @@ class Searcher {
 	protected:
 		int eval_board(const Board &board) { return evalfn(board); }
 		void tally_move() { ++num_moves; }
-		bool cancelled() { return m_cancelled; }
+		bool cancelled() { return (mint_load_32_relaxed(&m_cancelled) != 0); }
 
 	private:
 		Evaluator evalfn;
 		int num_moves;
 		int best_first_move;
-		bool m_cancelled;
+		mint_atomic32_t m_cancelled;
 
 		virtual int do_search(const Board &board, const RNG &rng, int lookahead, int *move) = 0;
 };
@@ -655,7 +662,10 @@ class SearcherCheat : public Searcher {
 	private:
 		int do_search_real(const Board &board, const RNG &rng, int lookahead, int *move) {
 			if (move) { *move = -1; }
-			if (lookahead == 0) { return eval_board(board); }
+			if (lookahead == 0) {
+				if (cancelled()) { return INT_MIN; }
+				return eval_board(board);
+			}
 
 			Board next_state;
 			RNG next_rng;
@@ -666,6 +676,7 @@ class SearcherCheat : public Searcher {
 				if (!next_state.move(i, 0, next_rng)) { continue; } // ignore null moves
 				tally_move();
 				int score = do_search_real(next_state, next_rng, lookahead - 1, 0);
+				if (cancelled()) { return INT_MIN; }
 				if (score > best_score) {
 					best_score = score;
 					if (move) { *move = i; }
@@ -684,7 +695,10 @@ class SearcherNaiveMinimax : public Searcher {
 	private:
 		int do_search_real(const Board &board, int lookahead, int *move) {
 			if (move) { *move = -1; }
-			if (lookahead == 0) { return eval_board(board); }
+			if (lookahead == 0) {
+				if (cancelled()) { return INT_MIN; }
+				return eval_board(board);
+			}
 
 			int best_score;
 			Board next_state;
@@ -697,6 +711,7 @@ class SearcherNaiveMinimax : public Searcher {
 						next_state = board;
 						next_state.state[i] = value;
 						int score = do_search_real(next_state, lookahead - 1, 0);
+						if (cancelled()) { return INT_MIN; }
 						if (score < best_score) {
 							best_score = score;
 						}
@@ -710,6 +725,7 @@ class SearcherNaiveMinimax : public Searcher {
 					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
 					tally_move();
 					int score = do_search_real(next_state, lookahead - 1, 0);
+					if (cancelled()) { return INT_MIN; }
 					if (score > best_score) {
 						best_score = score;
 						if (move) { *move = i; }
@@ -740,6 +756,7 @@ class SearcherAlphaBeta : public Searcher {
 					next_state = board;
 					next_state.state[i] = value;
 					beta = min(beta, do_search_maxi(next_state, alpha, beta, lookahead - 1, 0));
+					if (cancelled()) { return INT_MAX; }
 					if (alpha >= beta) { ++num_pruned; return beta; }
 				}
 			}
@@ -748,7 +765,10 @@ class SearcherAlphaBeta : public Searcher {
 
 		int do_search_maxi(const Board &board, int alpha, int beta, int lookahead, int *move) {
 			if (move) { *move = -1; }
-			if (lookahead == 0) { return eval_board(board); }
+			if (lookahead == 0) {
+				if (cancelled()) { return INT_MIN; }
+				return eval_board(board);
+			}
 			// final score must be *at least* alpha and *at most* beta
 			// alpha <= score <= beta
 			Board next_state;
@@ -757,6 +777,7 @@ class SearcherAlphaBeta : public Searcher {
 				if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
 				tally_move();
 				int score = do_search_mini(next_state, alpha, beta, lookahead - 1);
+				if (cancelled()) { return INT_MIN; }
 				if (score > alpha) {
 					alpha = score;
 					if (move) { *move = i; }
@@ -802,6 +823,7 @@ class SearcherCachingMinimax : public Searcher {
 			int best_score;
 
 			if (lookahead == 0) {
+				if (cancelled()) { return INT_MIN; }
 				best_score = eval_board(board);
 			} else {
 				Board next_state;
@@ -814,6 +836,7 @@ class SearcherCachingMinimax : public Searcher {
 							next_state = board;
 							next_state.state[i] = value;
 							int score = do_search_real(next_state, lookahead - 1, 0);
+							if (cancelled()) { return INT_MAX; }
 							if (score < best_score) {
 								best_score = score;
 							}
@@ -827,6 +850,7 @@ class SearcherCachingMinimax : public Searcher {
 						if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
 						tally_move();
 						int score = do_search_real(next_state, lookahead - 1, 0);
+						if (cancelled()) { return INT_MIN; }
 						if (score > best_score) {
 							best_score = score;
 							if (move) { *move = i; }
@@ -903,6 +927,7 @@ class SearcherCachingAlphaBeta : public Searcher {
 					next_state = board;
 					next_state.state[i] = value;
 					int score = do_search_maxi(next_state, alpha, beta, lookahead - 1, 0);
+					if (cancelled()) { return INT_MAX; }
 					if (score < beta) {
 						beta = score;
 						cache_type = SCORE_EXACT;
@@ -932,6 +957,7 @@ prune:
 			if (check_cached(cached, alpha, beta, lookahead, cache_output)) { return cache_output; }
 
 			if (lookahead == 0) {
+				if (cancelled()) { return INT_MIN; }
 				int score = eval_board(board);
 				const Info new_cached = { 0, SCORE_EXACT, score };
 				cache.put(board_k, cache_loc, new_cached);
@@ -944,6 +970,7 @@ prune:
 					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
 					tally_move();
 					int score = do_search_mini(next_state, alpha, beta, lookahead - 1);
+					if (cancelled()) { return INT_MIN; }
 					if (score > alpha) {
 						alpha = score;
 						cache_type = SCORE_EXACT;
@@ -1080,13 +1107,13 @@ void AIWorker::Work(const Board &board, const RNG &rng, int lookahead) {
 }
 
 void AIWorker::Cancel() {
-	// FIXME: implement quick cancellation
+	m_searcher.cancel();
 	Reset();
 }
 
 void AIWorker::Reset() {
-	Wait();
 	tthread::lock_guard<tthread::mutex> guard(m_lock);
+	while (m_working) { m_trigger.wait(m_lock); }
 	assert(!m_working);
 	m_move = -1;
 	m_done = false;
