@@ -78,6 +78,9 @@ I did not create tinythread.h or tinythread.cpp. Licensing details are included
 in comment blocks in those files.  TinyThread is by Marcus Geelnard (plus
 various contributors), and is available at: http://tinythreadpp.bitsnbites.eu/
 
+I did not create mintomic. Licensing details are included in mintomic/LICENSE.
+Mintomic is by Jeff Preshing and is available at: https://github.com/mintomic/mintomic
+
 I *did* write the code in tiles2048.cpp. I am releasing it under the MIT licence:
 
 Copyright © 2014 John Bartholomew
