@@ -1334,7 +1334,7 @@ static const float BOARD_EXTENT = 256.0f + 6.0f;
 static const float BOARD_ROUNDING = 6.0f;
 
 static const uint8_t MESSAGE_TEXT_COLOR[4] = { 119, 110, 101, 255 };
-static const float MESSAGE_FONT_SIZE = 30.0f;
+static const float MESSAGE_FONT_SIZE = 36.0f;
 
 // -------- GLOBAL STATE -----------------------------------------------------------------------
 
