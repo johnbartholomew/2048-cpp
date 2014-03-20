@@ -21,6 +21,7 @@ Build requirements
 * A C++ compiler (the Makefile uses g++)
 * A C compiler (the Makefile uses gcc)
 * GLFW 3 from http://www.glfw.org/
+* FreeType 2 from http://freetype.org/download.html
 * The 'Clear Sans' font, from https://01.org/clear-sans (used in tiles.svg)
 * Some way of rasterising an SVG file to an image (the Makefile uses Inkscape)
 
@@ -71,6 +72,11 @@ released under the MIT licence.
 
 I did not create stb_image.c.  stb_image.c has been placed in the public domain
 by its author(s) (Sean Barrett, plus contributors).
+stb_image.c is from http://nothings.org/stb/
+
+I did not create fontstash.h or glfontstash.h.  Licensing details are included
+in comment blocks in the files.  Font Stash is written by Mikko Mononen, and is
+available at: https://github.com/memononen/fontstash
 
 I *did* write the code in tiles2048.cpp, and the Makefile, and I created
 the tiles.svg image.  I am releasing those files under the MIT licence:
