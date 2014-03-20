@@ -31,7 +31,6 @@ To Do
 Like any project, this one has an effectively infinite to-do list. Starting with the most interesting:
 
 * Better board scoring heuristics (*many* possibilities here!)
-* Run the search in a background thread
 * Iterative Deepening Depth First Search (with caching)
 * Retaining cache state between moves during autoplay
 * Game over message
@@ -58,6 +57,7 @@ Beyond this point I will most likely have got bored and moved onto other project
 Done
 ----
 
+* Run the search in a background thread
 * Alpha-Beta pruned minimax
 * Alpha-Beta pruned minimax with caching
 
