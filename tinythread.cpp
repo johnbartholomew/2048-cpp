@@ -1,4 +1,8 @@
 /* -*- mode: c++; tab-width: 2; indent-tabs-mode: nil; -*-
+
+CHANGES BY JOHN BARTHOLOMEW, DOCUMENTED AS PER LICENSE CONDITION 2:
+Please see the note at the top of tinythread.h for a list of changes.
+
 Copyright (c) 2010-2012 Marcus Geelnard
 
 This software is provided 'as-is', without any express or implied
@@ -209,8 +213,20 @@ void * thread::wrapper_function(void * aArg)
   return 0;
 }
 
-thread::thread(void (*aFunction)(void *), void * aArg)
+thread::thread(void (*aFunction)(void *), void * aArg) :
+  mHandle(0), mWrapper(0)
+#if defined(_TTHREAD_WIN32_)
+  , mWin32ThreadID(0)
+#endif
 {
+  start(aFunction, aArg);
+}
+
+void thread::start(void (*aFunction)(void *), void * aArg)
+{
+  // Ensure we don't already have a thread attached
+  detach();
+
   // Fill out the thread startup information (passed to the thread wrapper)
   _thread_wrapper * tw = new _thread_wrapper(aFunction, aArg);
 

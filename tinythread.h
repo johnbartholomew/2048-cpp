@@ -1,4 +1,11 @@
 /* -*- mode: c++; tab-width: 2; indent-tabs-mode: nil; -*-
+
+CHANGES BY JOHN BARTHOLOMEW, DOCUMENTED AS PER LICENSE CONDITION 2:
+
+   * New method tthread::thread::start() which allows a thread to
+     be started after being created with the no-argument
+     tthread::thread() constructor.
+
 Copyright (c) 2010-2012 Marcus Geelnard
 
 This software is provided 'as-is', without any express or implied
@@ -840,6 +847,9 @@ class thread {
     /// will be called, which terminates the process. It is always wise to do
     /// @c join() before deleting a thread object.
     ~thread();
+
+    /// Start a new thread of execution.
+    void start(void (*aFunction)(void *), void * aArg);
 
     /// Wait for the thread to finish (join execution flows).
     /// After calling @c join(), the thread object is no longer associated with
