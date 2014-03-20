@@ -715,8 +715,8 @@ class SearcherNaiveMinimax : public Searcher {
 		}
 };
 
-static int imin(int a, int b) { return (a < b ? a : b); }
-static int imax(int a, int b) { return (a > b ? a : b); }
+template <typename T>
+static T min(T a, T b) { return (a < b ? a : b); }
 
 class SearcherAlphaBeta : public Searcher {
 	private:
@@ -729,7 +729,7 @@ class SearcherAlphaBeta : public Searcher {
 				for (int value = 1; value < 3; ++value) {
 					next_state = board;
 					next_state.state[i] = value;
-					beta = imin(beta, do_search_maxi(next_state, alpha, beta, lookahead - 1, 0));
+					beta = min(beta, do_search_maxi(next_state, alpha, beta, lookahead - 1, 0));
 					if (alpha >= beta) { ++num_pruned; return beta; }
 				}
 			}
@@ -775,7 +775,7 @@ class SearcherCachingMinimax : public Searcher {
 		int num_cached[STAT_DEPTH];
 
 		void tally_cache_hit(int lookahead) {
-			++num_cached[imin(lookahead, STAT_DEPTH - 1)];
+			++num_cached[min(lookahead, STAT_DEPTH - 1)];
 		}
 
 		int do_search_real(const Board &board, int lookahead, int *move) {
@@ -837,7 +837,7 @@ class SearcherCachingMinimax : public Searcher {
 			int score = do_search_real(board, lookahead*2, move);
 #if PRINT_CACHE_STATS
 			printf("(caching-minimax) cache hits:");
-			for (int i = 0; i < imin(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
+			for (int i = 0; i < min(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
 			printf("\n");
 #endif
 			return score;
@@ -856,7 +856,7 @@ class SearcherCachingAlphaBeta : public Searcher {
 		int num_pruned;
 
 		void tally_cache_hit(int lookahead) {
-			++num_cached[imin(lookahead, STAT_DEPTH - 1)];
+			++num_cached[min(lookahead, STAT_DEPTH - 1)];
 		}
 
 		bool check_cached(const Info * const cached, int alpha, int beta, int lookahead, int &output) {
@@ -961,7 +961,7 @@ prune:
 #if PRINT_CACHE_STATS
 			printf("(caching-alpha-beta) alpha-beta pruned %d\n", num_pruned);
 			printf("(caching-alpha-beta) cache hits:");
-			for (int i = 0; i < imin(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
+			for (int i = 0; i < min(lookahead*2, STAT_DEPTH); ++i) { printf(" %d", num_cached[i]); }
 			printf("\n");
 #endif
 			return score;
