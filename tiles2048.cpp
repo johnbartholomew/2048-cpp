@@ -1020,6 +1020,7 @@ static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, con
 	return best_move;
 }
 
+#if 1
 static bool automove(BoardHistory &history, AnimState &anim) {
 	const int lookahead = 5;
 	//SearcherCheat searcher;
@@ -1033,7 +1034,8 @@ static bool automove(BoardHistory &history, AnimState &anim) {
 	}
 }
 
-#if 0
+#else
+
 static bool automove(BoardHistory &history, AnimState &anim) {
 	const int lookahead = 3;
 
