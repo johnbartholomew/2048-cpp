@@ -1022,7 +1022,7 @@ static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, con
 
 #if 1
 static bool automove(BoardHistory &history, AnimState &anim) {
-	const int lookahead = 5;
+	const int lookahead = 6;
 	//SearcherCheat searcher;
 	SearcherCachingAlphaBeta searcher;
 	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), lookahead);
