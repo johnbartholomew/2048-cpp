@@ -1237,7 +1237,7 @@ static void render_tile(int value, float x, float y, float scale) {
 	if (value > 0) {
 		glEnable(GL_TEXTURE_2D);
 		fonsClearState(fons);
-		fonsSetAlign(fons, FONS_ALIGN_CENTER | FONS_ALIGN_MIDDLE );
+		fonsSetAlign(fons, FONS_ALIGN_CENTER | FONS_ALIGN_MIDDLE);
 		fonsSetSize(fons, TILE_FONT_SIZE);
 		fonsSetColor(fons, glfonsRGBA(text_col[0], text_col[1], text_col[2], text_col[3]));
 		fonsSetFont(fons, font);
@@ -1247,14 +1247,14 @@ static void render_tile(int value, float x, float y, float scale) {
 	glPopMatrix();
 }
 
-static void render_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
+static void render_tiles_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
 	for (int i = 0; i < anim.ntiles; ++i) {
 		const TileAnim &tile = anim.tiles[i];
 		render_tile(tile.value, tile.x.eval(alpha), tile.y.eval(alpha), tile.scale.eval(alpha));
 	}
 }
 
-static void render_static(const Board &board) {
+static void render_tiles_static(const Board &board) {
 	for (int i = 0; i < NUM_TILES; ++i) {
 		const int value = board.state[i];
 		if (value) {
@@ -1287,9 +1287,9 @@ static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const 
 	glTranslatef((float)wnd_w * 0.5f - 256.0f, (float)wnd_h * 0.5f - 256.0f, 0.0f);
 
 	if (alpha < 1.0) {
-		render_anim(alpha, board, anim);
+		render_tiles_anim(alpha, board, anim);
 	} else {
-		render_static(board);
+		render_tiles_static(board);
 	}
 }
 
