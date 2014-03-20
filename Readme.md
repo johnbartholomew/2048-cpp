@@ -30,8 +30,6 @@ To Do
 Like any project, this one has an effectively infinite to-do list. Starting with the most interesting:
 
 * Better board scoring heuristics (*many* possibilities here!)
-* Alpha-Beta pruned minimax
-* Alpha-Beta pruned minimax with caching
 * Run the search in a background thread
 * Iterative Deepening Depth First Search (with caching)
 * Retaining cache state between moves during autoplay
@@ -43,6 +41,7 @@ Like any project, this one has an effectively infinite to-do list. Starting with
 
 Beyond this point I will most likely have got bored and moved onto other projects:
 
+* Code structure clean-up
 * Actually multi-threaded search (ie, split a single search over multiple cores)
 * Alternative basic search/AI algorithms (e.g., maximise *expected* board score rather than assuming antagonistic placement of new tiles?)
 * A man-page
@@ -54,6 +53,12 @@ Beyond this point I will most likely have got bored and moved onto other project
 * Clean (schroot or similar) build script to produce distributable binaries
 * Win32 build?
 * Release!
+
+Done
+----
+
+* Alpha-Beta pruned minimax
+* Alpha-Beta pruned minimax with caching
 
 Legal / Intellectual Property
 -----------------------------
