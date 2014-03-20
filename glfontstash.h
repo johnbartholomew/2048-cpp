@@ -1,3 +1,8 @@
+// CHANGES BY JOHN BARTHOLOMEW, DOCUMENTED AS PER LICENSE CONDITION 2:
+//
+//    * Code (both header and source) is wrapped with extern "C" when
+//      built in C++ mode, to ensure compatible linkage between C/C++
+//      files.
 //
 // Copyright (c) 2009-2013 Mikko Mononen memon@inside.org
 //
@@ -18,14 +23,33 @@
 #ifndef GLFONTSTASH_H
 #define GLFONTSTASH_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct FONScontext* glfonsCreate(int width, int height, int flags);
 void glfonsDelete(struct FONScontext* ctx);
 
 unsigned int glfonsRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+
+#ifndef GLFONTSTASH_IMPLEMENTATION
+#undef FONTSTASH_IMPLEMENTATION
+#include "fontstash.h"
+#endif
+
 #endif
 
 #ifdef GLFONTSTASH_IMPLEMENTATION
+#define FONTSTASH_IMPLEMENTATION
+#include "fontstash.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct GLFONScontext {
 	GLuint tex;
@@ -128,5 +152,9 @@ unsigned int glfonsRGBA(unsigned char r, unsigned char g, unsigned char b, unsig
 {
 	return (r) | (g << 8) | (b << 16) | (a << 24);
 }
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif

@@ -1,3 +1,9 @@
+// CHANGES BY JOHN BARTHOLOMEW, DOCUMENTED AS PER LICENSE CONDITION 2:
+//
+//    * Code (both header and source) is wrapped with extern "C" when
+//      built in C++ mode, to ensure compatible linkage between C/C++
+//      files.
+//    * Add #include <stddef.h> which is needed to provide size_t.
 //
 // Copyright (c) 2009-2013 Mikko Mononen memon@inside.org
 //
@@ -18,6 +24,12 @@
 
 #ifndef FONS_H
 #define FONS_H
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define FONS_INVALID -1
 
@@ -104,6 +116,10 @@ int fonsValidateTexture(struct FONScontext* s, int* dirty);
 // Draws the stash texture for debugging
 void fonsDrawDebug(struct FONScontext* s, float x, float y);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+
 #endif // FONS_H
 
 
@@ -117,6 +133,10 @@ void fonsDrawDebug(struct FONScontext* s, float x, float y);
 #include FT_FREETYPE_H
 #include FT_ADVANCES_H
 #include <math.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct FONSttFontImpl {
 	FT_Face font;
@@ -1387,5 +1407,9 @@ void fonsDeleteInternal(struct FONScontext* stash)
 	if (stash->texData) free(stash->texData);
 	free(stash);
 }
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif
