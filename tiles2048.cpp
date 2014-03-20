@@ -1,4 +1,5 @@
 #include "glfontstash.h"
+#include "tinythread.h"
 
 #define CRAZY_VERBOSE_CACHE_DEBUGGER 0
 #define USE_CACHE_VERIFICATION_MAP 0
@@ -448,6 +449,7 @@ static uint64_t pack_board_state(const Board &board) {
 	return k;
 }
 
+#if 0 // unused
 static void unpack_board_state(Board &board, const uint64_t state) {
 	assert(NUM_TILES == 16);
 	uint64_t k = state;
@@ -456,6 +458,7 @@ static void unpack_board_state(Board &board, const uint64_t state) {
 		k >>= 4;
 	}
 }
+#endif
 
 static uint64_t mix64(uint64_t key) {
 	// from: https://gist.github.com/badboy/6267743
@@ -616,13 +619,18 @@ typedef int (*Evaluator)(const Board &board);
 
 class Searcher {
 	public:
-		Searcher(): evalfn(0), num_moves(0), best_first_move(-1) {}
+		Searcher(): evalfn(0), num_moves(0), best_first_move(-1), m_cancelled(false) {}
+
+		void cancel() {
+			this->m_cancelled = true;
+		}
 
 		int search(Evaluator evalfn, const Board &board, const RNG &rng, int lookahead) {
 			assert(evalfn);
 			this->evalfn = evalfn;
 			this->num_moves = 0;
 			this->best_first_move = -1;
+			this->m_cancelled = false;
 			return do_search(board, rng, lookahead, &best_first_move);
 		}
 
@@ -632,11 +640,13 @@ class Searcher {
 	protected:
 		int eval_board(const Board &board) { return evalfn(board); }
 		void tally_move() { ++num_moves; }
+		bool cancelled() { return m_cancelled; }
 
 	private:
 		Evaluator evalfn;
 		int num_moves;
 		int best_first_move;
+		bool m_cancelled;
 
 		virtual int do_search(const Board &board, const RNG &rng, int lookahead, int *move) = 0;
 };
@@ -1010,29 +1020,131 @@ static int ai_eval_board(const Board &board) {
 	//return board.count_free();
 }
 
-static int ai_move(Searcher &searcher, Evaluator evalfn, const Board &board, const RNG &rng, int lookahead, int *score = 0) {
-	int best_score = searcher.search(evalfn, board, rng, lookahead);
-	int best_move = searcher.get_best_first_move();
-#if 1 || PRINT_CACHE_STATS
-	printf("tried %d moves!\n", searcher.get_num_moves());
-#endif
-	if (score) { *score = best_score; }
-	return best_move;
+// -------- AI Worker Thread -------------------------------------------------------------------
+
+class AIWorker {
+	public:
+		AIWorker();
+		~AIWorker();
+
+		void Cancel();
+		void Reset(); // blocks
+		void Work(const Board &board, const RNG &rng, int lookahead);
+		bool IsWorking() const;
+		bool IsDone(int *move = 0) const;
+		void Wait(int *move = 0) const;
+
+	private:
+		SearcherCachingAlphaBeta m_searcher;
+		Evaluator m_evalfn;
+		int m_lookahead;
+
+		Board m_board;
+		RNG m_rng;
+
+		tthread::thread m_thread;
+		mutable tthread::mutex m_lock;
+		mutable tthread::condition_variable m_trigger;
+		bool m_working;
+		bool m_done;
+		int m_move;
+
+		void Main();
+		static void ai_worker_main(void *self);
+};
+
+AIWorker::AIWorker():
+	m_evalfn(&ai_eval_board),
+	m_lookahead(2),
+	m_working(false), m_done(false), m_move(-1) {
+	m_thread.start(&AIWorker::ai_worker_main, this);
 }
 
-#if 1
-static bool automove(BoardHistory &history, AnimState &anim) {
-	const int lookahead = 6;
-	//SearcherCheat searcher;
-	SearcherCachingAlphaBeta searcher;
-	int move = ai_move(searcher, &ai_eval_board, history.get(), history.get_rng(), lookahead);
-	if (move != -1) {
-		history.move(move, anim);
-		return true;
-	} else {
-		return false;
+AIWorker::~AIWorker() {}
+
+void AIWorker::Work(const Board &board, const RNG &rng, int lookahead) {
+	{
+		tthread::lock_guard<tthread::mutex> guard(m_lock);
+		if (m_working) {
+			fprintf(stderr, "AIWorker::Work() called while we're already working!\n");
+			return;
+		}
+		m_working = true;
+		m_done = false;
+		m_move = -1;
+		m_board = board;
+		m_rng = rng;
+		m_lookahead = lookahead;
+	}
+	m_trigger.notify_one();
+}
+
+void AIWorker::Cancel() {
+	// FIXME: implement quick cancellation
+	Reset();
+}
+
+void AIWorker::Reset() {
+	Wait();
+	tthread::lock_guard<tthread::mutex> guard(m_lock);
+	assert(!m_working);
+	m_move = -1;
+	m_done = false;
+}
+
+bool AIWorker::IsWorking() const {
+	tthread::lock_guard<tthread::mutex> guard(m_lock);
+	return m_working;
+}
+
+bool AIWorker::IsDone(int *move) const {
+	tthread::lock_guard<tthread::mutex> guard(m_lock);
+	if (move) { *move = (m_done ? m_move : -1); }
+	return m_done;
+}
+
+void AIWorker::Wait(int *move) const {
+	tthread::lock_guard<tthread::mutex> guard(m_lock);
+	while (m_working) { m_trigger.wait(m_lock); }
+	assert(!m_working);
+	if (move && m_done) { *move = m_move; }
+}
+
+void AIWorker::Main() {
+	Board board;
+	RNG rng;
+	int lookahead;
+	while (true) {
+		{
+			tthread::lock_guard<tthread::mutex> guard(m_lock);
+			while (!m_working) {
+				m_trigger.wait(m_lock);
+			}
+
+			board = m_board;
+			rng = m_rng;
+			lookahead = m_lookahead;
+		}
+
+		m_searcher.search(m_evalfn, board, rng, lookahead);
+		int move = m_searcher.get_best_first_move();
+#if 1 || PRINT_CACHE_STATS
+		printf("tried %d moves!\n", m_searcher.get_num_moves());
+#endif
+
+		{
+			tthread::lock_guard<tthread::mutex> guard(m_lock);
+			m_move = move;
+			m_done = true;
+			m_working = false;
+		}
+		m_trigger.notify_one();
 	}
 }
+
+void AIWorker::ai_worker_main(void *self) { static_cast<AIWorker*>(self)->Main(); }
+
+#if 1
 
 #else
 
@@ -1194,6 +1306,9 @@ static const float TILE_FONT_SIZE = 50.0f;
 static const float BOARD_EXTENT = 256.0f + 6.0f;
 static const float BOARD_ROUNDING = 6.0f;
 
+static const uint8_t MESSAGE_TEXT_COLOR[4] = { 119, 110, 101, 255 };
+static const float MESSAGE_FONT_SIZE = 30.0f;
+
 // -------- GLOBAL STATE -----------------------------------------------------------------------
 
 static FONScontext *fons;
@@ -1205,20 +1320,7 @@ static double s_anim_time0;
 static double s_anim_time1;
 static bool s_autoplay;
 
-static void start_anim(const double len) {
-	if (s_anim.tiles_changed()) {
-		s_anim_time0 = glfwGetTime();
-		s_anim_time1 = s_anim_time0 + len;
-	} else {
-		s_anim_time0 = s_anim_time1 = 0.0;
-	}
-}
-
-#if 0
-static void stop_anim() {
-	s_anim_time0 = s_anim_time1 = 0.0;
-}
-#endif
+static AIWorker *s_ai_worker;
 
 static void render_tile(int value, float x, float y, float scale) {
 	assert(value >= 0 && value < 16);
@@ -1291,6 +1393,34 @@ static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const 
 	} else {
 		render_tiles_static(board);
 	}
+
+	glLoadIdentity();
+	if (s_ai_worker->IsWorking()) {
+		glEnable(GL_TEXTURE_2D);
+		fonsClearState(fons);
+		fonsSetAlign(fons, FONS_ALIGN_CENTER | FONS_ALIGN_BASELINE);
+		fonsSetSize(fons, MESSAGE_FONT_SIZE);
+		const uint8_t *c = MESSAGE_TEXT_COLOR;
+		fonsSetColor(fons, glfonsRGBA(c[0], c[1], c[2], c[3]));
+		fonsSetFont(fons, font);
+		fonsDrawText(fons, wnd_w/2, wnd_h - 20.0f, "thinking...", 0);
+	}
+}
+
+static void start_anim(const double len) {
+	assert(len >= 0.0);
+	if (s_anim.tiles_changed() && len > 0.0) {
+		s_anim_time0 = glfwGetTime();
+		s_anim_time1 = s_anim_time0 + len;
+	} else {
+		s_anim_time0 = s_anim_time1 = 0.0;
+	}
+}
+
+static void automove() {
+	assert(s_ai_worker);
+	const int lookahead = 5;
+	s_ai_worker->Work(s_history.get(), s_history.get_rng(), lookahead);
 }
 
 static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int action, int /*mods*/) {
@@ -1299,8 +1429,13 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 			exit(0);
 		} else {
 			if (s_autoplay) {
-				if (key == GLFW_KEY_P) { s_autoplay = false; }
+				if (key == GLFW_KEY_P) {
+					s_ai_worker->Cancel();
+					s_autoplay = false;
+				}
 			} else {
+				if (s_ai_worker->IsWorking()) { return; }
+
 				s_anim.reset();
 				switch (key) {
 					case GLFW_KEY_RIGHT: { s_history.move(MOVE_RIGHT, s_anim); } break;
@@ -1310,10 +1445,10 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 					case GLFW_KEY_Z:     { s_history.undo(); } break;
 					case GLFW_KEY_X:     { s_history.redo(); } break;
 					case GLFW_KEY_N:     { s_history.new_game(s_anim); } break;
-					case GLFW_KEY_H:     { automove(s_history, s_anim); } break;
-					case GLFW_KEY_P:     { s_autoplay = automove(s_history, s_anim); } break;
+					case GLFW_KEY_H:     { automove(); } break;
+					case GLFW_KEY_P:     { s_autoplay = true; automove(); } break;
 				}
-				start_anim(s_autoplay ? ANIM_TIME_AUTOPLAY : ANIM_TIME_NORMAL);
+				start_anim(s_ai_worker->IsWorking() ? 0.0 : ANIM_TIME_NORMAL);
 			}
 		}
 	}
@@ -1335,6 +1470,8 @@ int main(int /*argc*/, char** /*argv*/) {
 		fprintf(stderr, "could not load font 'ClearSans-Bold.ttf'");
 		return 1;
 	}
+
+	s_ai_worker = new AIWorker();
 
 	s_autoplay = false;
 	s_anim.reset();
@@ -1371,17 +1508,33 @@ int main(int /*argc*/, char** /*argv*/) {
 		render(wnd_w, wnd_h, alpha, s_history.get(), s_anim);
 		glfwSwapBuffers(wnd);
 
-		// if we're not animating then be nice and don't spam the CPU & GPU
-		const bool anim_done = (t >= s_anim_time1);
 		if (anim_done) {
-			if (s_autoplay) {
-				s_anim.reset();
-				s_autoplay = automove(s_history, s_anim);
-				start_anim(ANIM_TIME_AUTOPLAY);
-				glfwPollEvents();
-			} else {
-				glfwWaitEvents();
+			start_anim(0.0); // reset animation timer
+			int move;
+			if (s_ai_worker->IsDone(&move)) {
+				// clear the worker so we don't get triggered for this move again
+				s_ai_worker->Reset();
+				if (move == -1) {
+					// force autoplay off if the AI gets stuck or has nothing to work on
+					s_autoplay = false;
+				} else {
+					s_anim.reset();
+					s_history.move(move, s_anim);
+					start_anim(s_autoplay ? ANIM_TIME_AUTOPLAY : ANIM_TIME_NORMAL);
+
+					if (s_autoplay) {
+						// when autoplaying, overlap computation of the
+						// next move with animation of the last move
+						automove();
+					}
+				}
 			}
+		}
+
+		// if we're not animating then be nice and don't spam the CPU & GPU
+		// (note: we don't check anim_done here, because that value is out of date!)
+		if ((s_anim_time0 == s_anim_time1) && !s_ai_worker->IsWorking()) {
+			glfwWaitEvents();
 		} else {
 			glfwPollEvents();
 		}
