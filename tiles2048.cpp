@@ -1319,6 +1319,8 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 
 int main(int /*argc*/, char** /*argv*/) {
 	glfwInit();
+	glfwWindowHint(GLFW_SAMPLES, 8);
+	glfwWindowHint(GLFW_DEPTH_BITS, 0);
 	GLFWwindow *wnd = glfwCreateWindow(700, 700, "2048", NULL, NULL);
 
 	glfwMakeContextCurrent(wnd);
