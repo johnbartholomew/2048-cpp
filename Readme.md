@@ -22,7 +22,7 @@ Build requirements
 * A C compiler (the Makefile uses gcc)
 * GLFW 3 from http://www.glfw.org/
 * FreeType 2 from http://freetype.org/download.html
-* The 'Clear Sans' font, from https://01.org/clear-sans (used in tiles.svg)
+* The 'Clear Sans' font, from https://01.org/clear-sans (specifically, the Bold version)
 * Some way of rasterising an SVG file to an image (the Makefile uses Inkscape)
 
 To Do
@@ -67,15 +67,14 @@ Legal / Intellectual Property
 I did not invent this game. I copied the game idea, game rules, styling and
 animation behaviour (inexactly) from https://github.com/gabrielecirulli/2048
 I did not copy any of the code from that implementation, but I did copy some
-stylistic things (e.g., colour values).  Gabriele Cirulli's implementation is
+stylistic things (e.g., colour values). Gabriele Cirulli's implementation is
 released under the MIT licence.
 
-I did not create fontstash.h or glfontstash.h.  Licensing details are included
-in comment blocks in the files.  Font Stash is written by Mikko Mononen, and is
+I did not create fontstash.h or glfontstash.h. Licensing details are included
+in comment blocks in the files. Font Stash is written by Mikko Mononen, and is
 available at: https://github.com/memononen/fontstash
 
-I *did* write the code in tiles2048.cpp, and the Makefile, and I created
-the tiles.svg image.  I am releasing those files under the MIT licence:
+I *did* write the code in tiles2048.cpp. I am releasing it under the MIT licence:
 
 Copyright © 2014 John Bartholomew
 
