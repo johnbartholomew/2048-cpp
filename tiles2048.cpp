@@ -781,7 +781,9 @@ class SearcherCachingMinimax : public Searcher {
 		int do_search_real(const Board &board, int lookahead, int *move) {
 			if (move) { *move = -1; }
 
-			const Info *cached = cache.get(board);
+			const uint64_t board_k = pack_board_state(board);
+			void *cache_loc = cache.where(board_k);
+			const Info *cached = cache.get(board_k, cache_loc);
 			if (cached && cached->lookahead == lookahead) {
 				tally_cache_hit(lookahead);
 				return cached->score;
@@ -824,7 +826,7 @@ class SearcherCachingMinimax : public Searcher {
 			}
 
 			const Info new_cached = { lookahead, best_score };
-			cache.put(board, new_cached);
+			cache.put(board_k, cache_loc, new_cached);
 			return best_score;
 		}
 
@@ -857,8 +859,7 @@ class SearcherCachingAlphaBeta : public Searcher {
 			++num_cached[imin(lookahead, STAT_DEPTH - 1)];
 		}
 
-		bool check_cached(const Board &board, int alpha, int beta, int lookahead, int &output) {
-			const Info *cached = cache.get(board);
+		bool check_cached(const Info * const cached, int alpha, int beta, int lookahead, int &output) {
 			bool cache_valid = false;
 			if (cached && cached->lookahead == lookahead) {
 				switch (cached->type) {
@@ -876,8 +877,13 @@ class SearcherCachingAlphaBeta : public Searcher {
 
 		int do_search_mini(const Board &board, int alpha, int beta, int lookahead) {
 			assert(alpha < beta);
+
+			const uint64_t board_k = pack_board_state(board);
+			void * const cache_loc = cache.where(board_k);
+
+			const Info * const cached = cache.get(board_k, cache_loc);
 			int cache_output;
-			if (check_cached(board, alpha, beta, lookahead, cache_output)) { return cache_output; }
+			if (check_cached(cached, alpha, beta, lookahead, cache_output)) { return cache_output; }
 
 			int cache_type = SCORE_LOWER_BOUND;
 			Board next_state;
@@ -900,19 +906,25 @@ class SearcherCachingAlphaBeta : public Searcher {
 			}
 prune:
 			const Info new_cached = { (int16_t)lookahead, (int16_t)cache_type, beta };
-			cache.put(board, new_cached);
+			cache.put(board_k, cache_loc, new_cached);
 			return beta;
 		}
 
 		int do_search_maxi(const Board &board, int alpha, int beta, int lookahead, int *move) {
 			if (move) { *move = -1; }
 			assert(alpha < beta);
+
+			const uint64_t board_k = pack_board_state(board);
+			void * const cache_loc = cache.where(board_k);
+
+			const Info * const cached = cache.get(board_k, cache_loc);
 			int cache_output;
-			if (check_cached(board, alpha, beta, lookahead, cache_output)) { return cache_output; }
+			if (check_cached(cached, alpha, beta, lookahead, cache_output)) { return cache_output; }
+
 			if (lookahead == 0) {
 				int score = eval_board(board);
 				const Info new_cached = { 0, SCORE_EXACT, score };
-				cache.put(board, new_cached);
+				cache.put(board_k, cache_loc, new_cached);
 				return score;
 			} else {
 				int cache_type = SCORE_UPPER_BOUND;
@@ -935,7 +947,7 @@ prune:
 				}
 prune:
 				const Info new_cached = { (int16_t)lookahead, (int16_t)cache_type, alpha };
-				cache.put(board, new_cached);
+				cache.put(board_k, cache_loc, new_cached);
 				return alpha;
 			}
 		}
