@@ -114,7 +114,7 @@ const unsigned char* fonsGetTextureData(struct FONScontext* stash, int* width, i
 int fonsValidateTexture(struct FONScontext* s, int* dirty);
 
 // Draws the stash texture for debugging
-void fonsDrawDebug(struct FONScontext* s, float x, float y);
+void fonsDrawDebug(struct FONScontext* s, float x, float y, unsigned int color);
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -1261,20 +1261,20 @@ int fonsTextIterNext(struct FONScontext* stash, struct FONStextIter* iter, struc
 	return 1;
 }
 
-void fonsDrawDebug(struct FONScontext* stash, float x, float y)
+void fonsDrawDebug(struct FONScontext* stash, float x, float y, unsigned int color)
 {
 	int w = stash->params.width;
 	int h = stash->params.height;
 	if (stash->nverts+6 > FONS_VERTEX_COUNT)
 		fons__flush(stash);
 
-	fons__vertex(stash, x+0, y+0, 0, 0, 0xffffffff);
-	fons__vertex(stash, x+w, y+h, 1, 1, 0xffffffff);
-	fons__vertex(stash, x+w, y+0, 1, 0, 0xffffffff);
+	fons__vertex(stash, x+0, y+0, 0, 0, color);
+	fons__vertex(stash, x+w, y+h, 1, 1, color);
+	fons__vertex(stash, x+w, y+0, 1, 0, color);
 
-	fons__vertex(stash, x+0, y+0, 0, 0, 0xffffffff);
-	fons__vertex(stash, x+0, y+h, 0, 1, 0xffffffff);
-	fons__vertex(stash, x+w, y+h, 1, 1, 0xffffffff);
+	fons__vertex(stash, x+0, y+0, 0, 0, color);
+	fons__vertex(stash, x+0, y+h, 0, 1, color);
+	fons__vertex(stash, x+w, y+h, 1, 1, color);
 
 	fons__flush(stash);
 }
