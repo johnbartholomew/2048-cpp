@@ -1616,6 +1616,28 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 	}
 }
 
+static void prime_fontstash_cache(GLFWwindow *wnd) {
+	// hack to cache glyphs we know we'll need
+	// (text is positioned off screen)
+	int wnd_w, wnd_h;
+	glfwGetFramebufferSize(wnd, &wnd_w, &wnd_h);
+	glViewport(0, 0, wnd_w, wnd_h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0.0, wnd_w, wnd_h, 0.0, -1.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	fonsClearState(fons);
+	fonsSetFont(fons, font);
+	fonsSetSize(fons, PLUS_SCORE_FONT_SIZE);
+	fonsDrawText(fons, 0.0f, -50.0f, "0123456789+", 0);
+	fonsSetSize(fons, TILE_FONT_SIZE);
+	fonsDrawText(fons, 0.0f, -50.0f, "0123456789", 0); // tile numbers
+	fonsSetSize(fons, MESSAGE_FONT_SIZE);
+	fonsDrawText(fons, 0.0f, -50.0f, "0123456789", 0); // score numbers
+	fonsDrawText(fons, 0.0f, -50.0f, "thinking...", 0); // message(s)
+}
+
 int main(int /*argc*/, char** /*argv*/) {
 	glfwInit();
 	glfwWindowHint(GLFW_SAMPLES, 8);
@@ -1632,6 +1654,8 @@ int main(int /*argc*/, char** /*argv*/) {
 		fprintf(stderr, "could not load font 'ClearSans-Bold.ttf'");
 		return 1;
 	}
+
+	prime_fontstash_cache(wnd);
 
 	s_ai_worker = new AIWorker();
 
