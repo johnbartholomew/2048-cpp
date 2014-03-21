@@ -303,7 +303,7 @@ struct Board {
 		}
 	}
 
-	bool tilt(int dx, int dy, AnimState *anim) {
+	bool tilt(int dx, int dy, AnimState *anim = 0, int *score = 0) {
 		assert((dx && !dy) || (dy && !dx));
 
 		int begin = ((dx | dy) > 0 ? NUM_TILES - 1 : 0);
@@ -325,6 +325,7 @@ struct Board {
 					if (last_value) {
 						if (last_value == state[from]) {
 							if (anim) { anim->merge(last_from, from, to, last_value); }
+							if (score) { *score += (1 << (last_value + 1)); }
 							moved = true;
 							state[to] = last_value + 1;
 							last_value = 0;
@@ -362,50 +363,85 @@ struct Board {
 		return moved;
 	}
 
-	bool move(int dir, AnimState *anim, RNG &rng) {
+	bool move(int dir, AnimState *anim, RNG &rng, int *score) {
 		assert(dir >= 0 && dir < 4);
 		if (anim) { anim->reset(); }
-		bool moved = tilt(DIR_DX[dir], DIR_DY[dir], anim);
+		bool moved = tilt(DIR_DX[dir], DIR_DY[dir], anim, score);
 		if (moved) { place(1, anim, rng); }
 		return moved;
 	}
 };
 
 struct BoardHistory {
+	struct HistoryState {
+		Board board;
+		RNG rng;
+		int score;
+		void reset() {
+			board.reset();
+			rng.reset();
+			score = 0;
+		}
+		void reset(const RNG &initial_rng) {
+			board.reset();
+			rng = initial_rng;
+			score = 0;
+		}
+		void reset(const Board &initial_board, const RNG &initial_rng) {
+			board = initial_board;
+			rng = initial_rng;
+			score = 0;
+		}
+		void reset(uint32_t seed) {
+			board.reset();
+			rng.reset(seed);
+			score = 0;
+		}
+		void place(int n, AnimState *anim) {
+			board.place(n, anim, rng);
+		}
+		bool move(int dir, AnimState *anim) {
+			return board.move(dir, anim, rng, &score);
+		}
+	};
+
 	enum { MAX_UNDO = 4096 };
-	Board boards[MAX_UNDO];
-	RNG rngs[MAX_UNDO];
+	HistoryState history[MAX_UNDO];
 	int current;
 	int undo_avail;
 	int redo_avail;
 
 	void clear_history() {
 		// retain RNG state
-		rngs[0] = rngs[current];
+		RNG rng = get_rng();
+		history[0].reset(rng);
 		current = 0;
 		undo_avail = 0;
 		redo_avail = 0;
-		boards[0].reset();
 	}
 
 	void reset(uint32_t seed = 0u) {
-		clear_history();
-		rngs[0].reset(seed);
+		history[0].reset(seed);
+		current = 0;
+		undo_avail = 0;
+		redo_avail = 0;
 	}
 
 	void reset(const Board &board, const RNG &initial_state) {
-		clear_history();
-		rngs[0] = initial_state;
-		boards[0] = board;
+		history[0].reset(board, initial_state);
+		current = 0;
+		undo_avail = 0;
+		redo_avail = 0;
 	}
 
 	void new_game(AnimState &anim) {
 		clear_history();
-		boards[0].place(2, &anim, rngs[0]);
+		history[0].place(2, &anim);
 	}
 
-	const Board &get() const { return boards[current]; }
-	const RNG &get_rng() const { return rngs[current]; }
+	const Board &get() const { return history[current].board; }
+	const RNG &get_rng() const { return history[current].rng; }
+	int get_score() const { return history[current].score; }
 
 	Board &undo() {
 		if (undo_avail) {
@@ -413,7 +449,7 @@ struct BoardHistory {
 			++redo_avail;
 			current = (current + MAX_UNDO - 1) % MAX_UNDO;
 		}
-		return boards[current];
+		return history[current].board;
 	}
 
 	Board &redo() {
@@ -422,18 +458,16 @@ struct BoardHistory {
 			++undo_avail;
 			current = (current + 1) % MAX_UNDO;
 		}
-		return boards[current];
+		return history[current].board;
 	}
 
 	void move(int dir, AnimState &anim) {
-		Board next_state = boards[current];
-		RNG next_rng = rngs[current];
-		bool moved = next_state.move(dir, &anim, next_rng);
+		HistoryState next = history[current];
+		bool moved = next.move(dir, &anim);
 
 		if (moved) {
 			current = (current + 1) % MAX_UNDO;
-			boards[current] = next_state;
-			rngs[current] = next_rng;
+			history[current] = next;
 			if (undo_avail < MAX_UNDO) { ++undo_avail; }
 			redo_avail = 0;
 		}
@@ -673,7 +707,7 @@ class SearcherCheat : public Searcher {
 			for (int i = 0; i < 4; ++i) {
 				next_state = board;
 				next_rng = rng;
-				if (!next_state.move(i, 0, next_rng)) { continue; } // ignore null moves
+				if (!next_state.move(i, 0, next_rng, 0)) { continue; } // ignore null moves
 				tally_move();
 				int score = do_search_real(next_state, next_rng, lookahead - 1, 0);
 				if (cancelled()) { return INT_MIN; }
@@ -722,7 +756,7 @@ class SearcherNaiveMinimax : public Searcher {
 				best_score = INT_MIN;
 				for (int i = 0; i < 4; ++i) {
 					next_state = board;
-					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+					if (!next_state.tilt(DIR_DX[i], DIR_DY[i])) { continue; } // ignore null moves
 					tally_move();
 					int score = do_search_real(next_state, lookahead - 1, 0);
 					if (cancelled()) { return INT_MIN; }
@@ -774,7 +808,7 @@ class SearcherAlphaBeta : public Searcher {
 			Board next_state;
 			for (int i = 0; i < 4; ++i) {
 				next_state = board;
-				if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+				if (!next_state.tilt(DIR_DX[i], DIR_DY[i])) { continue; } // ignore null moves
 				tally_move();
 				int score = do_search_mini(next_state, alpha, beta, lookahead - 1);
 				if (cancelled()) { return INT_MIN; }
@@ -847,7 +881,7 @@ class SearcherCachingMinimax : public Searcher {
 					best_score = INT_MIN;
 					for (int i = 0; i < 4; ++i) {
 						next_state = board;
-						if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+						if (!next_state.tilt(DIR_DX[i], DIR_DY[i])) { continue; } // ignore null moves
 						tally_move();
 						int score = do_search_real(next_state, lookahead - 1, 0);
 						if (cancelled()) { return INT_MIN; }
@@ -967,7 +1001,7 @@ prune:
 				Board next_state;
 				for (int i = 0; i < 4; ++i) {
 					next_state = board;
-					if (!next_state.tilt(DIR_DX[i], DIR_DY[i], 0)) { continue; } // ignore null moves
+					if (!next_state.tilt(DIR_DX[i], DIR_DY[i])) { continue; } // ignore null moves
 					tally_move();
 					int score = do_search_mini(next_state, alpha, beta, lookahead - 1);
 					if (cancelled()) { return INT_MIN; }
@@ -1394,6 +1428,19 @@ static void render_tiles_static(const Board &board) {
 	}
 }
 
+static void render_score(int score) {
+	char buf[32];
+	snprintf(buf, sizeof(buf), "%d", score);
+
+	fonsClearState(fons);
+	fonsSetAlign(fons, FONS_ALIGN_RIGHT | FONS_ALIGN_BASELINE);
+	fonsSetSize(fons, MESSAGE_FONT_SIZE);
+	const uint8_t *c = MESSAGE_TEXT_COLOR;
+	fonsSetColor(fons, glfonsRGBA(c[0], c[1], c[2], c[3]));
+	fonsSetFont(fons, font);
+	fonsDrawText(fons, 0.0f, 0.0f, buf, 0);
+}
+
 static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const AnimState &anim) {
 	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
@@ -1413,7 +1460,7 @@ static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const 
 	glColor4ub(187, 173, 160, 255);
 	render_rounded_square(wnd_w/2, wnd_h/2, BOARD_EXTENT, BOARD_ROUNDING);
 
-	glTranslatef((float)wnd_w * 0.5f - 256.0f, (float)wnd_h * 0.5f - 256.0f, 0.0f);
+	glTranslatef((wnd_w/2) - 256.0f, (wnd_h/2) - 256.0f, 0.0f);
 
 	if (alpha < 1.0) {
 		render_tiles_anim(alpha, board, anim);
@@ -1422,7 +1469,11 @@ static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const 
 	}
 
 	glLoadIdentity();
+	glTranslatef(wnd_w*0.5f + 256.0f, wnd_h * 0.5f - 256.0f - 32.0f, 0.0f);
+	render_score(s_history.get_score());
+
 	if (s_ai_worker->IsWorking()) {
+		glLoadIdentity();
 		glEnable(GL_TEXTURE_2D);
 		fonsClearState(fons);
 		fonsSetAlign(fons, FONS_ALIGN_CENTER | FONS_ALIGN_BASELINE);
