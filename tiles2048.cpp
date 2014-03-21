@@ -21,6 +21,15 @@
 #include <cassert>
 #include <stdint.h>
 
+template <typename T>
+static T min(T a, T b) { return (a < b ? a : b); }
+
+template <typename T>
+static T max(T a, T b) { return (a > b ? a : b); }
+
+template <typename T>
+static T clamp(T x, T a, T b) { return (x < a ? a : (x > b ? b : x)); }
+
 enum BoardConfig {
 	TILES_X = 4,
 	TILES_Y = 4,
@@ -77,20 +86,11 @@ typedef uint8_t BoardState[NUM_TILES];
 
 #define PRINT_ANIM 0
 
-enum EasingStyle {
-	EASE_LINEAR
-};
-
-static float clampf(float x, float a, float b) {
-	return (x < a ? a : (x > b ? b : x));
-}
-
 struct AnimCurve {
 	enum { MAX_KEYS = 8 };
 	float ky[MAX_KEYS];
 	float kt[MAX_KEYS];
 	int nkeys;
-	// int easing;
 
 	void reset() {
 		nkeys = 0;
@@ -98,7 +98,7 @@ struct AnimCurve {
 
 	void push(float t, float y) {
 		assert(nkeys < MAX_KEYS);
-		assert(t >= 0.0f && t <= 1.0f);
+		assert(t >= 0.0f);
 		assert(nkeys == 0 || t > kt[nkeys-1]);
 		ky[nkeys] = y;
 		kt[nkeys] = t;
@@ -109,7 +109,7 @@ struct AnimCurve {
 		if (nkeys == 0) { return 0.0f; }
 		if (nkeys == 1) { return ky[0]; }
 
-		at = clampf(at, 0.0f, 1.0f);
+		at = max(at, 0.0f);
 		for (int i = 1; i < nkeys; ++i) {
 			if (at < kt[i]) {
 				float alpha = (at - kt[i-1]) / (kt[i] - kt[i-1]);
@@ -117,6 +117,10 @@ struct AnimCurve {
 			}
 		}
 		return ky[nkeys - 1];
+	}
+
+	float period() const {
+		return (nkeys == 0 ? 0.0f : kt[nkeys-1]);
 	}
 };
 
@@ -139,6 +143,9 @@ struct TileAnim {
 		y.reset();
 		scale.reset();
 	}
+	float period() const {
+		return max(max(x.period(), y.period()), scale.period());
+	}
 };
 
 struct ScoreAnim {
@@ -152,6 +159,9 @@ struct ScoreAnim {
 		y.reset();
 		alpha.reset();
 	}
+	float period() const {
+		return max(max(x.period(), y.period()), alpha.period());
+	}
 };
 
 struct Board;
@@ -159,6 +169,7 @@ struct Board;
 struct AnimState {
 	TileAnim tiles[NUM_TILES*2];
 	ScoreAnim scores[NUM_TILES];
+	float period;
 	int ntiles;
 	int nscores;
 	bool moved;
@@ -168,6 +179,7 @@ struct AnimState {
 	}
 
 	void reset() {
+		period = 0.0f;
 		ntiles = 0;
 		nscores = 0;
 		moved = false;
@@ -185,17 +197,21 @@ struct AnimState {
 		TileAnim &tile = tiles[ntiles++];
 		tile.reset();
 		tile.value = value;
-		tile.x.push(0.0f, x0);
-		tile.x.push(0.75f, x1);
-		tile.y.push(0.0f, y0);
-		tile.y.push(0.75f, y1);
-		tile.scale.push(0.0f, 1.0f);
+		tile.x.push(0, x0);
+		tile.x.push(100, x1);
+		tile.y.push(0, y0);
+		tile.y.push(100, y1);
+		tile.scale.push(0, 1.0f);
+
+		period = max(period, tile.period());
 	}
 
 	void add_slide_and_vanish(int from, int to, int value) {
 		add_slide(from, to, value);
-		tiles[ntiles-1].scale.push(0.7f, 1.0f);
-		tiles[ntiles-1].scale.push(1.0f, 0.2f);
+		tiles[ntiles-1].scale.push( 80, 1.0f);
+		tiles[ntiles-1].scale.push(200, 0.2f);
+
+		period = max(period, tiles[ntiles-1].period());
 	}
 
 	void add_pop_tile(int where, int value) {
@@ -207,13 +223,15 @@ struct AnimState {
 		TileAnim &tile = tiles[ntiles++];
 		tile.reset();
 		tile.value = value;
-		tile.x.push(0.0f, x);
-		tile.y.push(0.0f, y);
-		tile.scale.push(0.0f, 0.0f);
-		tile.scale.push(0.4999f, 0.0f);
-		tile.scale.push(0.5f, 0.2f);
-		tile.scale.push(0.75f, 1.25f);
-		tile.scale.push(1.0f, 1.0f);
+		tile.x.push(0, x);
+		tile.y.push(0, y);
+		tile.scale.push(0, 0.0f);
+		tile.scale.push(89.9999f, 0.0f);
+		tile.scale.push(90, 0.2f);
+		tile.scale.push(120, 1.25f);
+		tile.scale.push(200, 1.0f);
+
+		period = max(period, tile.period());
 	}
 
 	void add_place_tile(int where, int value) {
@@ -227,10 +245,12 @@ struct AnimState {
 		tile.value = value;
 		tile.x.push(0.0f, x);
 		tile.y.push(0.0f, y);
-		tile.scale.push(0.0f, 0.0f);
-		tile.scale.push(0.6999f, 0.0f);
-		tile.scale.push(0.7f, 0.2f);
-		tile.scale.push(1.0f, 1.0f);
+		tile.scale.push(0, 0.0f);
+		tile.scale.push(89.9999f, 0.0f);
+		tile.scale.push(90, 0.2f);
+		tile.scale.push(200, 1.0f);
+
+		period = max(period, tile.period());
 	}
 
 	void add_score_slide(int where, int value) {
@@ -240,13 +260,16 @@ struct AnimState {
 		ScoreAnim &score = scores[nscores++];
 		score.reset();
 		score.score = 1 << value;
-		score.x.push(0.0f, x);
-		score.y.push(0.0f, y);
-		score.y.push(0.4f, y);
-		score.y.push(1.0f, y-96.0f);
-		score.alpha.push(0.0f, 0.0f);
-		score.alpha.push(0.4f, 0.0f);
-		score.alpha.push(1.0f, 1.0f);
+		score.x.push(0, x);
+		score.y.push(0, y);
+		score.y.push(100, y);
+		score.y.push(500, y-96.0f);
+		score.alpha.push(0, 0.0f);
+		score.alpha.push(90, 0.0f);
+		score.alpha.push(100, 0.4f);
+		score.alpha.push(500, 1.0f);
+
+		period = max(period, score.period());
 	}
 
 	void merge(int from0, int from1, int to, int old_value) {
@@ -808,9 +831,6 @@ class SearcherNaiveMinimax : public Searcher {
 		}
 };
 
-template <typename T>
-static T min(T a, T b) { return (a < b ? a : b); }
-
 class SearcherAlphaBeta : public Searcher {
 	private:
 		int num_pruned;
@@ -1327,8 +1347,9 @@ static void render_rounded_square(float x, float y, float extent, float rounding
 
 // -------- GLOBAL GAME CONFIGURATION/STYLE ----------------------------------------------------
 
-static const double ANIM_TIME_NORMAL = 0.2;
-static const double ANIM_TIME_AUTOPLAY = 0.05;
+// speeds are multiplied by 1000 so that the animation key frame time values can be specified in milliseconds
+static const double ANIM_SPEED_NORMAL = 1.0 * 1000.0;
+static const double ANIM_SPEED_AUTOPLAY = 2.0 * 1000.0;
 
 static const uint8_t TILE_COLORS[16][4] = {
 	{ 211, 199, 187, 255 }, // blank tile
@@ -1403,7 +1424,7 @@ static const float BOARD_ROUNDING = 6.0f;
 static const uint8_t MESSAGE_TEXT_COLOR[4] = { 119, 110, 101, 255 };
 static const float MESSAGE_FONT_SIZE = 36.0f;
 
-static const uint8_t PLUS_SCORE_TEXT_COLOR[4] = { 162, 249, 75, 255 };
+static const uint8_t PLUS_SCORE_TEXT_COLOR[4] = { 141, 217, 65, 255 };
 static const float PLUS_SCORE_FONT_SIZE = 70.0f;
 
 // -------- GLOBAL STATE -----------------------------------------------------------------------
@@ -1414,7 +1435,7 @@ static int font;
 static BoardHistory s_history;
 static AnimState s_anim;
 static double s_anim_time0;
-static double s_anim_time1;
+static double s_anim_speed;
 static bool s_autoplay;
 
 static AIWorker *s_ai_worker;
@@ -1446,10 +1467,10 @@ static void render_tile(int value, float x, float y, float scale) {
 	glPopMatrix();
 }
 
-static void render_tiles_anim(float alpha, const Board& /*board*/, const AnimState &anim) {
+static void render_tiles_anim(float t, const Board& /*board*/, const AnimState &anim) {
 	for (int i = 0; i < anim.ntiles; ++i) {
 		const TileAnim &tile = anim.tiles[i];
-		render_tile(tile.value, tile.x.eval(alpha), tile.y.eval(alpha), tile.scale.eval(alpha));
+		render_tile(tile.value, tile.x.eval(t), tile.y.eval(t), tile.scale.eval(t));
 	}
 }
 
@@ -1498,7 +1519,7 @@ static void render_score(int score) {
 	fonsDrawText(fons, 0.0f, 0.0f, buf, 0);
 }
 
-static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const AnimState &anim) {
+static void render(int wnd_w, int wnd_h, float t, const Board &board, const AnimState &anim) {
 	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
@@ -1519,9 +1540,9 @@ static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const 
 
 	glTranslatef((wnd_w/2) - 256.0f, (wnd_h/2) - 256.0f, 0.0f);
 
-	if (alpha < 1.0) {
-		render_tiles_anim(alpha, board, anim);
-		render_scores_anim(alpha, anim);
+	if (t <= anim.period) {
+		render_tiles_anim(t, board, anim);
+		render_scores_anim(t, anim);
 	} else {
 		render_tiles_static(board);
 	}
@@ -1543,13 +1564,19 @@ static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const 
 	}
 }
 
-static void start_anim(const double len) {
-	assert(len >= 0.0);
-	if (s_anim.tiles_changed() && len > 0.0) {
+static void stop_anim() {
+	s_anim.reset();
+	s_anim_time0 = 0.0;
+	s_anim_speed = 1.0;
+}
+
+static void start_anim(const double speed) {
+	assert(speed > 0.0);
+	if (s_anim.tiles_changed()) {
 		s_anim_time0 = glfwGetTime();
-		s_anim_time1 = s_anim_time0 + len;
+		s_anim_speed = speed;
 	} else {
-		s_anim_time0 = s_anim_time1 = 0.0;
+		stop_anim();
 	}
 }
 
@@ -1572,7 +1599,7 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 			} else {
 				if (s_ai_worker->IsWorking()) { return; }
 
-				s_anim.reset();
+				stop_anim();
 				switch (key) {
 					case GLFW_KEY_RIGHT: { s_history.move(MOVE_RIGHT, s_anim); } break;
 					case GLFW_KEY_LEFT:  { s_history.move(MOVE_LEFT, s_anim); } break;
@@ -1584,7 +1611,7 @@ static void handle_key(GLFWwindow * /*wnd*/, int key, int /*scancode*/, int acti
 					case GLFW_KEY_H:     { automove(); } break;
 					case GLFW_KEY_P:     { s_autoplay = true; automove(); } break;
 				}
-				start_anim(s_ai_worker->IsWorking() ? 0.0 : ANIM_TIME_NORMAL);
+				start_anim(ANIM_SPEED_NORMAL);
 			}
 		}
 	}
@@ -1628,24 +1655,22 @@ int main(int /*argc*/, char** /*argv*/) {
 	}
 #else
 	s_history.new_game(s_anim);
-	start_anim(ANIM_TIME_NORMAL);
+	start_anim(ANIM_SPEED_NORMAL);
 #endif
 
 	glfwSetKeyCallback(wnd, &handle_key);
 
 	while (!glfwWindowShouldClose(wnd)) {
-		const double t = glfwGetTime();
-		const float alpha = min(1.0, (t - s_anim_time0) / (s_anim_time1 - s_anim_time0));
-		const bool anim_done = (t >= s_anim_time1);
-		assert(alpha >= 0.0f);
+		const double t = max(0.0, (glfwGetTime() - s_anim_time0)) * s_anim_speed;
+		const bool anim_done = (t >= s_anim.period);
 
 		int wnd_w, wnd_h;
 		glfwGetFramebufferSize(wnd, &wnd_w, &wnd_h);
-		render(wnd_w, wnd_h, alpha, s_history.get(), s_anim);
+		render(wnd_w, wnd_h, t, s_history.get(), s_anim);
 		glfwSwapBuffers(wnd);
 
 		if (anim_done) {
-			start_anim(0.0); // reset animation timer
+			stop_anim();
 			int move;
 			if (s_ai_worker->IsDone(&move)) {
 				// clear the worker so we don't get triggered for this move again
@@ -1656,7 +1681,7 @@ int main(int /*argc*/, char** /*argv*/) {
 				} else {
 					s_anim.reset();
 					s_history.move(move, s_anim);
-					start_anim(s_autoplay ? ANIM_TIME_AUTOPLAY : ANIM_TIME_NORMAL);
+					start_anim(s_autoplay ? ANIM_SPEED_AUTOPLAY : ANIM_SPEED_NORMAL);
 
 					if (s_autoplay) {
 						// when autoplaying, overlap computation of the
@@ -1669,7 +1694,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
 		// if we're not animating then be nice and don't spam the CPU & GPU
 		// (note: we don't check anim_done here, because that value is out of date!)
-		if ((s_anim_time0 == s_anim_time1) && !s_ai_worker->IsWorking()) {
+		if (!s_anim.tiles_changed() && !s_ai_worker->IsWorking()) {
 			glfwWaitEvents();
 		} else {
 			glfwPollEvents();
