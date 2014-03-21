@@ -1627,7 +1627,7 @@ int main(int /*argc*/, char** /*argv*/) {
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 
-	fons = glfonsCreate(128, 128, FONS_ZERO_TOPLEFT);
+	fons = glfonsCreate(256, 256, FONS_ZERO_TOPLEFT);
 	font = fonsAddFont(fons, "clearsans", "ClearSans-Bold.ttf");
 	if (font == FONS_INVALID) {
 		fprintf(stderr, "could not load font 'ClearSans-Bold.ttf'");
