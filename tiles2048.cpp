@@ -141,11 +141,26 @@ struct TileAnim {
 	}
 };
 
+struct ScoreAnim {
+	int score;
+	AnimCurve x;
+	AnimCurve y;
+	AnimCurve alpha;
+	void reset() {
+		score = 0;
+		x.reset();
+		y.reset();
+		alpha.reset();
+	}
+};
+
 struct Board;
 
 struct AnimState {
 	TileAnim tiles[NUM_TILES*2];
+	ScoreAnim scores[NUM_TILES];
 	int ntiles;
+	int nscores;
 	bool moved;
 
 	bool tiles_changed() const {
@@ -154,6 +169,7 @@ struct AnimState {
 
 	void reset() {
 		ntiles = 0;
+		nscores = 0;
 		moved = false;
 	}
 
@@ -217,10 +233,27 @@ struct AnimState {
 		tile.scale.push(1.0f, 1.0f);
 	}
 
+	void add_score_slide(int where, int value) {
+		assert(nscores < NUM_TILES);
+		float x, y;
+		tile_idx_to_xy(where, &x, &y);
+		ScoreAnim &score = scores[nscores++];
+		score.reset();
+		score.score = 1 << value;
+		score.x.push(0.0f, x);
+		score.y.push(0.0f, y);
+		score.y.push(0.4f, y);
+		score.y.push(1.0f, y-96.0f);
+		score.alpha.push(0.0f, 0.0f);
+		score.alpha.push(0.4f, 0.0f);
+		score.alpha.push(1.0f, 1.0f);
+	}
+
 	void merge(int from0, int from1, int to, int old_value) {
 		add_slide_and_vanish(from0, to, old_value);
 		add_slide_and_vanish(from1, to, old_value);
 		add_pop_tile(to, old_value + 1);
+		add_score_slide(to, old_value + 1);
 		moved = true;
 	}
 
@@ -1370,6 +1403,9 @@ static const float BOARD_ROUNDING = 6.0f;
 static const uint8_t MESSAGE_TEXT_COLOR[4] = { 119, 110, 101, 255 };
 static const float MESSAGE_FONT_SIZE = 36.0f;
 
+static const uint8_t PLUS_SCORE_TEXT_COLOR[4] = { 162, 249, 75, 255 };
+static const float PLUS_SCORE_FONT_SIZE = 70.0f;
+
 // -------- GLOBAL STATE -----------------------------------------------------------------------
 
 static FONScontext *fons;
@@ -1414,6 +1450,27 @@ static void render_tiles_anim(float alpha, const Board& /*board*/, const AnimSta
 	for (int i = 0; i < anim.ntiles; ++i) {
 		const TileAnim &tile = anim.tiles[i];
 		render_tile(tile.value, tile.x.eval(alpha), tile.y.eval(alpha), tile.scale.eval(alpha));
+	}
+}
+
+static void render_scores_anim(float t, const AnimState &anim) {
+	const uint8_t * const text_col = PLUS_SCORE_TEXT_COLOR;
+	char buf[32];
+	glEnable(GL_TEXTURE_2D);
+	for (int i = 0; i < anim.nscores; ++i) {
+		const ScoreAnim &score = anim.scores[i];
+
+		const float alpha = score.alpha.eval(t);
+		if (alpha > 0.0f) {
+			snprintf(buf, sizeof(buf), "+%d", score.score);
+
+			fonsClearState(fons);
+			fonsSetAlign(fons, FONS_ALIGN_CENTER | FONS_ALIGN_MIDDLE);
+			fonsSetSize(fons, PLUS_SCORE_FONT_SIZE);
+			fonsSetColor(fons, glfonsRGBA(text_col[0], text_col[1], text_col[2], (uint8_t)(alpha*255.0f)));
+			fonsSetFont(fons, font);
+			fonsDrawText(fons, score.x.eval(t) + 64.0f, score.y.eval(t) + 64.0f, buf, 0);
+		}
 	}
 }
 
@@ -1464,6 +1521,7 @@ static void render(int wnd_w, int wnd_h, float alpha, const Board &board, const 
 
 	if (alpha < 1.0) {
 		render_tiles_anim(alpha, board, anim);
+		render_scores_anim(alpha, anim);
 	} else {
 		render_tiles_static(board);
 	}
