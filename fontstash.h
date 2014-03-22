@@ -1008,12 +1008,11 @@ static struct FONSglyph* fons__getGlyph(struct FONScontext* stash, struct FONSfo
 	// Find free spot for the rect in the atlas
 	if (fons__atlasAddRect(stash->atlas, gw, gh, &gx, &gy) == 0) {
 		// Atlas is full
-		if (stash->handleError) {
-			// Handle error, and try again.
-			stash->handleError(stash->errorUptr, FONS_ATLAS_FULL, 0);
-			if (fons__atlasAddRect(stash->atlas, gw, gh, &gx, &gy) == 0)
-				return NULL;
-		}
+		if (!stash->handleError) return NULL;
+		// Handle error, and try again.
+		stash->handleError(stash->errorUptr, FONS_ATLAS_FULL, 0);
+		if (fons__atlasAddRect(stash->atlas, gw, gh, &gx, &gy) == 0)
+			return NULL;
 	}
 
 	// Init glyph.
