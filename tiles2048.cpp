@@ -1427,6 +1427,18 @@ static const float MESSAGE_FONT_SIZE = 36.0f;
 static const uint8_t PLUS_SCORE_TEXT_COLOR[4] = { 141, 217, 65, 255 };
 static const float PLUS_SCORE_FONT_SIZE = 70.0f;
 
+static const uint8_t HELP_BG_COLOR[4] = { 220, 218, 202, 255};
+static const uint8_t HELP_KEY_COLOR[4] = { 132, 76, 43, 255 };
+static const uint8_t HELP_KEY_TEXT_COLOR[4] = { 239, 223, 188, 255 };
+static const uint8_t HELP_TEXT_COLOR[4] = { 53, 40, 23, 255 };
+static const float HELP_KEY_X = -128.0f;
+static const float HELP_TEXT_X = 64.0f;
+static const float HELP_KEY_EXTENT = 16.0f;
+static const float HELP_KEY_ROUNDING = 3.0f;
+static const float HELP_TITLE_FONT_SIZE = 42.0f;
+static const float HELP_TEXT_FONT_SIZE = 32.0f;
+static const float HELP_KEY_FONT_SIZE = 28.0f;
+
 // -------- GLOBAL STATE -----------------------------------------------------------------------
 
 static FONScontext *fons;
@@ -1561,6 +1573,159 @@ static void render(int wnd_w, int wnd_h, float t, const Board &board, const Anim
 		fonsSetFont(fons, font);
 		fonsDrawText(fons, wnd_w/2, wnd_h - 20.0f, "thinking...", 0);
 	}
+
+#if 0
+	glLoadIdentity();
+	fonsDrawDebug(fons, 0.0f, 0.0f, 0xff000000);
+#endif
+}
+
+static void draw_text_multiline(FONScontext *fons, float x, float y, const char *text, int align) {
+	float ascender, descender, line_height;
+	fonsVertMetrics(fons, &ascender, &descender, &line_height);
+
+	int nlines = 1;
+	for (const char *c = text; *c; ++c) { if (*c == '\n') { ++nlines; } }
+
+	float total_height = (nlines - 1)*line_height + ascender - descender;
+	if (align & FONS_ALIGN_TOP) { y += ascender; }
+	else if (align & FONS_ALIGN_BOTTOM) { y += ascender - total_height; }
+	else if (align & FONS_ALIGN_MIDDLE) { y += ascender - 0.5f * total_height; }
+
+	fonsPushState(fons);
+	fonsSetAlign(fons, (align & FONS_MASK_HALIGN) | FONS_ALIGN_BASELINE);
+
+	for (const char *c = text; *c; ++c) {
+		if (*c == '\n') {
+			if (c != text) { fonsDrawText(fons, x, y, text, c); }
+			text = c + 1;
+			y += line_height;
+		}
+	}
+	fonsDrawText(fons, x, y, text, 0);
+
+	fonsPopState(fons);
+}
+
+static void draw_arrow(float x, float y, int dir) {
+	const float stem_halfwidth = 1.0f;
+	const float stem_halflength = 9.0f;
+	const float arrow_length = 8.0f;
+
+	glPushMatrix();
+	glTranslatef(x, y, 0.0f);
+
+	switch (dir) {
+		case MOVE_LEFT: glRotatef(90.0f, 0.0f, 0.0f, -1.0f); break;
+		case MOVE_RIGHT: glRotatef(90.0f, 0.0f, 0.0f, 1.0f); break;
+		case MOVE_UP: break;
+		case MOVE_DOWN: glRotatef(180.0f, 0.0f, 0.0f, 1.0f); break;
+	}
+
+	glBegin(GL_TRIANGLES);
+	glVertex2f(0.0f, -stem_halflength);
+	glVertex2f(- 0.5f*arrow_length, - stem_halflength + arrow_length);
+	glVertex2f(+ 0.5f*arrow_length, - stem_halflength + arrow_length);
+	glVertex2f(+ stem_halfwidth, - stem_halflength + arrow_length);
+	glVertex2f(- stem_halfwidth, - stem_halflength + arrow_length);
+	glVertex2f(- stem_halfwidth, + stem_halflength);
+	glVertex2f(+ stem_halfwidth, - stem_halflength + arrow_length);
+	glVertex2f(- stem_halfwidth, + stem_halflength);
+	glVertex2f(+ stem_halfwidth, + stem_halflength);
+	glEnd();
+
+	glPopMatrix();
+}
+
+static void render_help(int wnd_w, int wnd_h) {
+	const uint8_t *c;
+	glClearColor(250/255.0f, 248/255.0f, 239/255.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glViewport(0, 0, wnd_w, wnd_h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0.0, (double)wnd_w, (double)wnd_h, 0.0, -1.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	glDisable(GL_TEXTURE_2D);
+	c = HELP_BG_COLOR;
+	glColor4ub(c[0], c[1], c[2], c[3]);
+	render_rounded_square(wnd_w/2, wnd_h/2, BOARD_EXTENT, BOARD_ROUNDING);
+
+	glTranslatef((wnd_w/2), (wnd_h/2) - 256.0f, 0.0f);
+
+	fonsClearState(fons);
+	fonsSetFont(fons, font);
+	fonsSetAlign(fons, FONS_ALIGN_CENTER | FONS_ALIGN_MIDDLE);
+	fonsSetSize(fons, HELP_KEY_FONT_SIZE);
+	c = HELP_KEY_TEXT_COLOR;
+	fonsSetColor(fons, glfonsRGBA(c[0], c[1], c[2], c[3]));
+
+	float x, y;
+	x = HELP_KEY_X;
+	y = 170.0f - (HELP_KEY_EXTENT + 2.0f);
+	glColor4ub(HELP_KEY_COLOR[0], HELP_KEY_COLOR[1], HELP_KEY_COLOR[2], HELP_KEY_COLOR[3]);
+	render_rounded_square(x, y, HELP_KEY_EXTENT, HELP_KEY_ROUNDING);
+	glColor4ub(HELP_KEY_TEXT_COLOR[0], HELP_KEY_TEXT_COLOR[1], HELP_KEY_TEXT_COLOR[2], HELP_KEY_TEXT_COLOR[3]);
+	draw_arrow(x, y, MOVE_UP);
+	y = 170.0f + (HELP_KEY_EXTENT + 2.0f);
+	x = HELP_KEY_X - (2.0f*HELP_KEY_EXTENT + 4.0f);
+	glColor4ub(HELP_KEY_COLOR[0], HELP_KEY_COLOR[1], HELP_KEY_COLOR[2], HELP_KEY_COLOR[3]);
+	render_rounded_square(x, y, HELP_KEY_EXTENT, HELP_KEY_ROUNDING);
+	glColor4ub(HELP_KEY_TEXT_COLOR[0], HELP_KEY_TEXT_COLOR[1], HELP_KEY_TEXT_COLOR[2], HELP_KEY_TEXT_COLOR[3]);
+	draw_arrow(x, y, MOVE_LEFT);
+	x = HELP_KEY_X;
+	glColor4ub(HELP_KEY_COLOR[0], HELP_KEY_COLOR[1], HELP_KEY_COLOR[2], HELP_KEY_COLOR[3]);
+	render_rounded_square(x, y, HELP_KEY_EXTENT, HELP_KEY_ROUNDING);
+	glColor4ub(HELP_KEY_TEXT_COLOR[0], HELP_KEY_TEXT_COLOR[1], HELP_KEY_TEXT_COLOR[2], HELP_KEY_TEXT_COLOR[3]);
+	draw_arrow(x, y, MOVE_DOWN);
+	x = HELP_KEY_X + (2.0f*HELP_KEY_EXTENT + 4.0f);
+	glColor4ub(HELP_KEY_COLOR[0], HELP_KEY_COLOR[1], HELP_KEY_COLOR[2], HELP_KEY_COLOR[3]);
+	render_rounded_square(x, y, HELP_KEY_EXTENT, HELP_KEY_ROUNDING);
+	glColor4ub(HELP_KEY_TEXT_COLOR[0], HELP_KEY_TEXT_COLOR[1], HELP_KEY_TEXT_COLOR[2], HELP_KEY_TEXT_COLOR[3]);
+	draw_arrow(x, y, MOVE_RIGHT);
+
+	glColor4ub(HELP_KEY_COLOR[0], HELP_KEY_COLOR[1], HELP_KEY_COLOR[2], HELP_KEY_COLOR[3]);
+
+	y = 260.0f;
+	x = HELP_KEY_X - (HELP_KEY_EXTENT + 2.0f);
+	render_rounded_square(x, y, HELP_KEY_EXTENT, HELP_KEY_ROUNDING);
+	fonsDrawText(fons, x, y, "Z", 0);
+	glDisable(GL_TEXTURE_2D);
+	x = HELP_KEY_X + (HELP_KEY_EXTENT + 2.0f);
+	render_rounded_square(x, y, HELP_KEY_EXTENT, HELP_KEY_ROUNDING);
+	fonsDrawText(fons, x, y, "X", 0);
+	glDisable(GL_TEXTURE_2D);
+
+	y = 350.0f;
+	x = HELP_KEY_X;
+	render_rounded_square(x, y, HELP_KEY_EXTENT, HELP_KEY_ROUNDING);
+	fonsDrawText(fons, x, y, "H", 0);
+	glDisable(GL_TEXTURE_2D);
+
+	y = 440.0f;
+	x = HELP_KEY_X;
+	render_rounded_square(x, y, HELP_KEY_EXTENT, HELP_KEY_ROUNDING);
+	fonsDrawText(fons, x, y, "P", 0);
+
+	const int align = FONS_ALIGN_CENTER | FONS_ALIGN_MIDDLE;
+	fonsClearState(fons);
+	fonsSetFont(fons, font);
+	fonsSetAlign(fons, align);
+	fonsSetSize(fons, HELP_TITLE_FONT_SIZE);
+	c = HELP_TEXT_COLOR;
+	fonsSetColor(fons, glfonsRGBA(c[0], c[1], c[2], c[3]));
+	fonsDrawText(fons, 0.0f, 50.0f, "Try to reach the 2048 tile!", 0);
+	fonsSetSize(fons, HELP_TEXT_FONT_SIZE);
+	draw_text_multiline(fons, HELP_TEXT_X, 170.0f, "Use the arrow keys to\nmove the tiles", align);
+	draw_text_multiline(fons, HELP_TEXT_X, 260.0f, "Use Z and A to\nundo and redo", align);
+	draw_text_multiline(fons, HELP_TEXT_X, 350.0f, "Use H to get a hint\nfrom the computer", align);
+	draw_text_multiline(fons, HELP_TEXT_X, 440.0f, "Use P to toggle\nauto-play", align);
 
 #if 0
 	glLoadIdentity();
