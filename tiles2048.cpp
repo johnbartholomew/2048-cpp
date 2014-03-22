@@ -1638,6 +1638,16 @@ static void prime_fontstash_cache(GLFWwindow *wnd) {
 	fonsDrawText(fons, 0.0f, -50.0f, "thinking...", 0); // message(s)
 }
 
+static void fons_error_callback(void* /*udata*/, int error, int /*val*/) {
+	switch (error) {
+		case FONS_ATLAS_FULL: fprintf(stderr, "font-stash atlas is full!\n"); break;
+		case FONS_SCRATCH_FULL: fprintf(stderr, "font-stash scratch buffer is full!\n"); break;
+		case FONS_STATES_OVERFLOW: fprintf(stderr, "font-stash state stack overflow!\n"); break;
+		case FONS_STATES_UNDERFLOW: fprintf(stderr, "font-stash state stack underflow!\n"); break;
+		default: assert(0 && "unknown font-stash error code"); break;
+	}
+}
+
 int main(int /*argc*/, char** /*argv*/) {
 	glfwInit();
 	glfwWindowHint(GLFW_SAMPLES, 8);
@@ -1649,6 +1659,7 @@ int main(int /*argc*/, char** /*argv*/) {
 	glEnable(GL_CULL_FACE);
 
 	fons = glfonsCreate(256, 256, FONS_ZERO_TOPLEFT);
+	fonsSetErrorCallback(fons, &fons_error_callback, 0);
 	font = fonsAddFont(fons, "clearsans", "ClearSans-Bold.ttf");
 	if (font == FONS_INVALID) {
 		fprintf(stderr, "could not load font 'ClearSans-Bold.ttf'");
