@@ -1561,6 +1561,11 @@ static void render(int wnd_w, int wnd_h, float t, const Board &board, const Anim
 		fonsSetFont(fons, font);
 		fonsDrawText(fons, wnd_w/2, wnd_h - 20.0f, "thinking...", 0);
 	}
+
+#if 0
+	glLoadIdentity();
+	fonsDrawDebug(fons, 0.0f, 0.0f, 0xff000000);
+#endif
 }
 
 static void stop_anim() {
