@@ -43,11 +43,13 @@ enum FONSalign {
 	FONS_ALIGN_LEFT 	= 1<<0,	// Default
 	FONS_ALIGN_CENTER 	= 1<<1,
 	FONS_ALIGN_RIGHT 	= 1<<2,
+	FONS_MASK_HALIGN        = 3,
 	// Vertical align
 	FONS_ALIGN_TOP 		= 1<<3,
 	FONS_ALIGN_MIDDLE	= 1<<4,
 	FONS_ALIGN_BOTTOM	= 1<<5,
 	FONS_ALIGN_BASELINE	= 1<<6, // Default
+	FONS_MASK_VALIGN        = 120,
 };
 
 enum FONSerrorCode {
