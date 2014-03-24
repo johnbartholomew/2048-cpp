@@ -30,6 +30,9 @@ static T max(T a, T b) { return (a > b ? a : b); }
 template <typename T>
 static T clamp(T x, T a, T b) { return (x < a ? a : (x > b ? b : x)); }
 
+template <typename T>
+static T signum(T a) { return T(T(0) < a) - T(a < T(0)); }
+
 enum BoardConfig {
 	TILES_X = 4,
 	TILES_Y = 4,
@@ -1101,8 +1104,8 @@ static int monotonicity(const uint8_t *begin, int stride, int n) {
 	int last_value = *begin, last_sign = 0;
 	for (; i < n; ++i) {
 		if (*begin) {
-			int delta = (*begin - last_value);
-			int sign = (0 < delta) - (delta < 0);
+			const int delta = (*begin - last_value);
+			const int sign = signum(delta);
 			if (sign) {
 				if (last_sign && last_sign != sign) { --total; }
 				last_sign = sign;
